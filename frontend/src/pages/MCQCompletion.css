@@ -1,0 +1,242 @@
+/* MCQCompletion.css */
+.mcq-completion-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.proceed-button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.spinner {
+  border: 3px solid #eee;
+  border-top: 3px solid #7b62f8;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  display: inline-block;
+  vertical-align: middle;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.completion-content {
+  max-width: 800px;
+  width: 100%;
+  position: relative;
+}
+
+.back-button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 25px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 30px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.back-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.completion-main {
+  background: white;
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.completion-title {
+  font-size: 2.5rem;
+  color: #333;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.completion-subtitle {
+  font-size: 1.2rem;
+  color: #666;
+  margin-bottom: 40px;
+  font-weight: 400;
+}
+
+.next-section-card {
+  background: #f8f9fa;
+  border-radius: 15px;
+  padding: 30px;
+  margin-top: 30px;
+  text-align: left;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.check-icon {
+  width: 40px;
+  height: 40px;
+  background: #28a745;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  margin-right: 15px;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  color: #333;
+  margin: 0;
+  font-weight: 600;
+}
+
+.section-description {
+  color: #666;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin-bottom: 25px;
+}
+
+.important-notice {
+  display: flex;
+  align-items: flex-start;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 25px;
+}
+
+.warning-icon {
+  font-size: 20px;
+  margin-right: 15px;
+  margin-top: 2px;
+}
+
+.notice-content {
+  flex: 1;
+  color: #856404;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.notice-content strong {
+  color: #856404;
+}
+
+.expectations-section {
+  margin-bottom: 30px;
+}
+
+.expectations-title {
+  font-size: 1.2rem;
+  color: #333;
+  margin-bottom: 15px;
+  font-weight: 600;
+}
+
+.expectations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.expectations-list li {
+  padding: 8px 0;
+  color: #666;
+  font-size: 15px;
+  position: relative;
+  padding-left: 25px;
+}
+
+.expectations-list li::before {
+  content: "•";
+  color: #007bff;
+  font-weight: bold;
+  position: absolute;
+  left: 0;
+}
+
+.action-section {
+  text-align: center;
+  padding-top: 20px;
+  border-top: 1px solid #dee2e6;
+}
+
+.proceed-button {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  border: none;
+  color: white;
+  padding: 15px 30px;
+  border-radius: 25px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+  margin-bottom: 10px;
+}
+
+.proceed-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+}
+
+.action-subtitle {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .mcq-completion-container {
+    padding: 10px;
+  }
+  
+  .completion-main {
+    padding: 25px;
+  }
+  
+  .completion-title {
+    font-size: 2rem;
+  }
+  
+  .completion-subtitle {
+    font-size: 1rem;
+  }
+  
+  .next-section-card {
+    padding: 20px;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+  
+  .check-icon {
+    margin-bottom: 10px;
+    margin-right: 0;
+  }
+}
