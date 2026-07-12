@@ -242,14 +242,35 @@ console.log("openended scores:",openEndedScores);
       return () => clearTimeout(timer);
     }
   }, [countdown]);
+  const OQ_WEIGHTS = {
+  "Subject Interest & Domain Curiosity":   { 1: 12, 2: 15, 3: 3 },
+  "Cognitive & Creative Skills":           { 1: 18, 2: 8,  3: 4 },
+  "Academic Aptitude & Learning Style":    { 1: 16, 2: 10, 3: 4 },
+  "Digital & Technological Orientation":   { 1: 13, 2: 13, 3: 4 },
+  "Values & Lifestyle Priorities":         { 1: 5,  2: 10, 3: 15 },
+  "Financial Awareness & Constraints":     { 1: 3,  2: 17, 3: 10 },
+  "Risk Appetite & Ambiguity Tolerance":   { 1: 6,  2: 16, 3: 8 },
+  "Emotional & Social Competence":         { 1: 8,  2: 4,  3: 18 },
+  "Communication & Language Preference":   { 1: 10, 2: 10, 3: 10 },
+  "Personal Management & Wellness":        { 1: 12, 2: 3,  3: 15 },
+};
   const calculatedData = useMemo(() => {
     const openEndedCategoryScores = {};
     openEndedScores.forEach(scoreObj => {
-      const { category, score } = scoreObj;
-      if (!openEndedCategoryScores[category]) {
-        openEndedCategoryScores[category] = [];
-      }
-      openEndedCategoryScores[category].push(score);
+      const { category, score, question } = scoreObj;
+      if (!openEndedCategoryScores[category]) openEndedCategoryScores[category] = {};
+      openEndedCategoryScores[category][question] = score; // score expected 0–100
+    });
+
+    const openEndedCategoryAverages = {};
+    Object.entries(openEndedCategoryScores).forEach(([category, scoresByQ]) => {
+      const weights = OQ_WEIGHTS[category] || { 1: 10, 2: 10, 3: 10 }; // fallback, shouldn't hit
+      let weightedPercent = 0;
+      Object.entries(scoresByQ).forEach(([q, score]) => {
+        const w = weights[q] || 0;
+        weightedPercent += (score / 100) * w; // contributes its share of the 30% OQ block
+      });
+      openEndedCategoryAverages[category] = weightedPercent; // already on a 0–30 scale
     });
 
     const openEndedCategoryAverages = {};
@@ -279,7 +300,7 @@ console.log("openended scores:",openEndedScores);
       const mcqPercent = (maxCategoryScores[category] || 0) > 0
         ? (mcq / maxCategoryScores[category]) * 70
         : 0;
-      const openPercent = open * 30; 
+      const openPercent = open ; 
 
       const weightedScore = Math.round(mcqPercent + openPercent);
           chartData.push({
