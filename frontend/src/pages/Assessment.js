@@ -186,9 +186,10 @@ if (!hasRestoredState && !loading && questions.length > 0 ) {
   if(restored){
     if (restored.userInfo) setUserInfo(restored.userInfo);
     setAnswers(restored.answers);
+    answersRef.current = restored.answers;
     setCurrentCategory(restored.currentCategory || categories[0]);
     setCurrentQuestionIndex(restored.currentQuestionIndex || 0);
-    setRemainingTime(restored.remaninigTime ?? 20*60);
+    setRemainingTime(restored.remainingTime ?? 20*60);
 
     if (restored.categoryProgress && Object.keys(restored.categoryProgress).length > 0){
         const recalculated = {};
@@ -198,7 +199,7 @@ if (!hasRestoredState && !loading && questions.length > 0 ) {
       answered: (data.questions || []).filter(q => restored.answers[q.id]).length
     };
   });
-      setCategoryProgress(restored.categoryProgress);
+      setCategoryProgress(recalculated);
       setCategories(Object.keys(restored.categoryProgress));
     }else{
       const progress = {}

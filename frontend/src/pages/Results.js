@@ -97,6 +97,31 @@ console.log("CategoryScores:", categoryScores);
 console.log("openended scores:",openEndedScores);
   
   const userInfo = coreSource.userInfo || {};
+
+  // openEndedResponses can arrive as an array or an object keyed by id,
+  // and individual entries may use slightly different field names
+  // depending on where they were captured upstream. Normalize once here
+  // so every consumer below works off a consistent { question, answer } shape.
+  const normalizedOpenEnded = useMemo(() => {
+    const toEntry = (item, idx) => {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        return { question: `Question ${idx + 1}`, answer: item };
+      }
+      const question = item.question || item.q || item.prompt || `Question ${idx + 1}`;
+      const answer = item.answer || item.a || item.response || item.text || '';
+      return { question, answer };
+    };
+
+    let entries = [];
+    if (Array.isArray(openEndedResponses)) {
+      entries = openEndedResponses.map(toEntry);
+    } else if (openEndedResponses && typeof openEndedResponses === 'object') {
+      entries = Object.values(openEndedResponses).map(toEntry);
+    }
+    return entries.filter((e) => e && e.answer && e.answer.trim().length > 0);
+  }, [openEndedResponses]);
+
   const [barChartData, setBarChartData] = useState([]);
   const [skillsData, setSkillsData] = useState([]);
   const tooltipsFetched = useRef(!!(savedResults?.tooltips && Object.keys(savedResults.tooltips).length > 0));
@@ -135,6 +160,27 @@ console.log("openended scores:",openEndedScores);
   const mentorInsightsFetched = useRef(false);
   const [mentorInsightsError, setMentorInsightsError] = useState(null);
 
+  // Assessment Summary
+  const [assessmentSummary, setAssessmentSummary] = useState(() => savedResults?.assessmentSummary || null);
+  const [loadingAssessmentSummary, setLoadingAssessmentSummary] = useState(false);
+  const [assessmentSummaryError, setAssessmentSummaryError] = useState(null);
+  const assessmentSummaryFetched = useRef(!!savedResults?.assessmentSummary);
+
+  // Reflection Summary
+  const [reflectionSummary, setReflectionSummary] = useState(() => savedResults?.reflectionSummary || null);
+  const [loadingReflectionSummary, setLoadingReflectionSummary] = useState(false);
+  const [reflectionSummaryError, setReflectionSummaryError] = useState(null);
+  const reflectionSummaryFetched = useRef(!!savedResults?.reflectionSummary);
+  // Tracks whether the reflection summary attempt has finished (success OR failure),
+  // so Career Recommendations knows when it's safe to proceed even on error.
+  const [reflectionSummaryDone, setReflectionSummaryDone] = useState(!!savedResults?.reflectionSummary);
+
+  // Career & Stream Recommendations
+  const [careerRecommendations, setCareerRecommendations] = useState(() => savedResults?.careerRecommendations || null);
+  const [loadingCareerRecommendations, setLoadingCareerRecommendations] = useState(false);
+  const [careerRecommendationsError, setCareerRecommendationsError] = useState(null);
+  const careerRecommendationsFetched = useRef(!!savedResults?.careerRecommendations);
+
   // Keep localStorage in sync as each section finishes loading, so a
   // refresh restores the whole report instantly instead of re-fetching
   // (and instead of showing a blank page).
@@ -158,9 +204,12 @@ console.log("openended scores:",openEndedScores);
       growthSources,
       momentumToolkit,
       growthOpportunities,
-      mentorInsights
+      mentorInsights,
+      assessmentSummary,
+      reflectionSummary,
+      careerRecommendations
     });
-  }, [tooltips, growthProjection, marketAnalysis, peerBenchmark, actionPlan, growthSources, momentumToolkit, growthOpportunities, mentorInsights]);
+  }, [tooltips, growthProjection, marketAnalysis, peerBenchmark, actionPlan, growthSources, momentumToolkit, growthOpportunities, mentorInsights, assessmentSummary, reflectionSummary, careerRecommendations]);
 
   useEffect(() => {
     console.log("========== MCQ SCORES BY CATEGORY ==========");
@@ -1023,6 +1072,180 @@ useEffect(() => {
   const normalizedSkill = strongestSkill.trim();
   const strongestSkillIcon = skillIcons[normalizedSkill] || "💜";
 
+  const buildUserProfilePayload = useCallback((profile) => ({
+    name: profile.fullName || "Anonymous",
+    age: Number(profile.age) || 0,
+    education_level: profile.educationLevel || "",
+    field: profile.field || "",
+    domain: profile.domain || profile.field || "General",
+    exp_level: profile.experienceLevel || "Beginner",
+    interests: profile.hobbies
+      ? profile.hobbies.split(',').map(s => s.trim())
+      : (profile.interests || []),
+    career_goal: profile.careerGoals || profile.aspiration || ""
+  }), []);
+
+  // ---------- Assessment Summary ----------
+  useEffect(() => {
+    const fetchAssessmentSummary = async () => {
+      if (
+        assessmentSummaryFetched.current ||
+        !userInfo?.fullName ||
+        barChartData.length === 0
+      ) return;
+
+      assessmentSummaryFetched.current = true;
+      setLoadingAssessmentSummary(true);
+      setAssessmentSummaryError(null);
+
+      const categoryScoresPayload = {};
+      barChartData.forEach(item => {
+        categoryScoresPayload[item.label] = item.value || 0;
+      });
+
+      const payload = {
+        user_profile: buildUserProfilePayload(userInfo),
+        category_scores: categoryScoresPayload,
+        open_ended_answers: normalizedOpenEnded.map(({ question, answer }) => ({
+          question,
+          answer,
+          categories: []
+        })),
+        overall_score: Number(percentage) || 0,
+        performance_level: getPerformanceLevel(percentage),
+        strongest_skill: strongestSkill
+      };
+
+      const startTime = performance.now();
+      try {
+        const res = await fetch("http://127.0.0.1:8000/generate_assessment_summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+
+        const data = await res.json();
+        const endTime = performance.now();
+        console.log(`✅ [Assessment Summary] Finished in ${(endTime - startTime).toFixed(2)} ms`);
+        console.log("assessment summary", data);
+        setAssessmentSummary(data.assessment_summary);
+      } catch (err) {
+        console.error("Assessment summary error:", err);
+        setAssessmentSummaryError("Failed to load assessment summary");
+      } finally {
+        setLoadingAssessmentSummary(false);
+      }
+    };
+
+    fetchAssessmentSummary();
+  }, [userInfo, barChartData, percentage, strongestSkill, normalizedOpenEnded, getPerformanceLevel, buildUserProfilePayload]);
+
+  // ---------- Reflection Summary ----------
+  useEffect(() => {
+    const fetchReflectionSummary = async () => {
+      if (
+        reflectionSummaryFetched.current ||
+        !userInfo?.fullName ||
+        normalizedOpenEnded.length === 0
+      ) return;
+
+      reflectionSummaryFetched.current = true;
+      setLoadingReflectionSummary(true);
+      setReflectionSummaryError(null);
+
+      const payload = {
+        user_profile: buildUserProfilePayload(userInfo),
+        open_ended_answers: normalizedOpenEnded.map(({ question, answer }) => ({
+          question,
+          answer,
+          categories: []
+        }))
+      };
+
+      const startTime = performance.now();
+      try {
+        const res = await fetch("http://127.0.0.1:8000/generate_reflection_summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+
+        const data = await res.json();
+        const endTime = performance.now();
+        console.log(`✅ [Reflection Summary] Finished in ${(endTime - startTime).toFixed(2)} ms`);
+        console.log("reflection summary", data);
+        setReflectionSummary(data.reflection_summary);
+      } catch (err) {
+        console.error("Reflection summary error:", err);
+        setReflectionSummaryError("Failed to load reflection summary");
+      } finally {
+        setLoadingReflectionSummary(false);
+        setReflectionSummaryDone(true);
+      }
+    };
+
+    fetchReflectionSummary();
+  }, [userInfo, normalizedOpenEnded, buildUserProfilePayload]);
+
+  // ---------- Career & Stream Recommendations ----------
+  // Waits for the reflection summary attempt to finish (success or failure)
+  // so recommendations can be grounded in it, without blocking indefinitely.
+  useEffect(() => {
+    const fetchCareerRecommendations = async () => {
+      if (
+        careerRecommendationsFetched.current ||
+        !userInfo?.fullName ||
+        barChartData.length === 0 ||
+        !reflectionSummaryDone
+      ) return;
+
+      careerRecommendationsFetched.current = true;
+      setLoadingCareerRecommendations(true);
+      setCareerRecommendationsError(null);
+
+      const categoryScoresPayload = {};
+      barChartData.forEach(item => {
+        categoryScoresPayload[item.label] = item.value || 0;
+      });
+
+      const payload = {
+        user_profile: buildUserProfilePayload(userInfo),
+        category_scores: categoryScoresPayload,
+        reflection_summary: reflectionSummary || "",
+        strong_categories: barChartData.filter(item => item.value >= 65).map(item => item.label),
+        weak_categories: barChartData.filter(item => item.value < 50).map(item => item.label)
+      };
+
+      const startTime = performance.now();
+      try {
+        const res = await fetch("http://127.0.0.1:8000/generate_career_recommendations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+
+        const data = await res.json();
+        const endTime = performance.now();
+        console.log(`✅ [Career Recommendations] Finished in ${(endTime - startTime).toFixed(2)} ms`);
+        console.log("career recommendations", data);
+        setCareerRecommendations(data);
+      } catch (err) {
+        console.error("Career recommendations error:", err);
+        setCareerRecommendationsError("Failed to load career recommendations");
+      } finally {
+        setLoadingCareerRecommendations(false);
+      }
+    };
+
+    fetchCareerRecommendations();
+  }, [userInfo, barChartData, reflectionSummaryDone, reflectionSummary, buildUserProfilePayload]);
+
   const handleRetakeAssessment = useCallback(() => {
     navigate('/');
   }, [navigate]);
@@ -1876,6 +2099,84 @@ useEffect(() => {
 ))}
 
           </div>
+        </div>
+
+        <div className="analysis-card">
+          <div className="card-header">
+            <span className="card-icon">🧠</span>
+            <h3>Assessment Summary</h3>
+            <p>A holistic view of personality, strengths, and growth areas</p>
+          </div>
+          {assessmentSummary ? (
+            <p className="summary-text">{assessmentSummary}</p>
+          ) : loadingAssessmentSummary ? (
+            <div className="loading-spinner">Generating your assessment summary...</div>
+          ) : assessmentSummaryError ? (
+            <p className="section-error-text">{assessmentSummaryError}</p>
+          ) : (
+            <div className="loading-spinner">Preparing your assessment summary...</div>
+          )}
+        </div>
+
+        <div className="analysis-card">
+          <div className="card-header">
+            <span className="card-icon">💭</span>
+            <h3>Reflection Summary</h3>
+            <p>Themes, interests, and values drawn from your open-ended answers</p>
+          </div>
+          {reflectionSummary ? (
+            <p className="summary-text">{reflectionSummary}</p>
+          ) : loadingReflectionSummary ? (
+            <div className="loading-spinner">Synthesizing your reflections...</div>
+          ) : reflectionSummaryError ? (
+            <p className="section-error-text">{reflectionSummaryError}</p>
+          ) : (
+            <div className="loading-spinner">Preparing your reflection summary...</div>
+          )}
+        </div>
+
+        <div className="analysis-card">
+          <div className="card-header">
+            <span className="card-icon">🎯</span>
+            <h3>Recommended Career Paths</h3>
+            <p>Academic streams and career domains matched to your profile</p>
+          </div>
+          {careerRecommendations ? (
+            <>
+              {careerRecommendations.streams?.length > 0 && (
+                <div className="recommendation-section">
+                  <h4 className="recommendation-section-title">Recommended Academic Streams</h4>
+                  <div className="recommendation-list">
+                    {careerRecommendations.streams.map((stream, index) => (
+                      <div key={index} className="recommendation-item">
+                        <div className="recommendation-name">{stream.name}</div>
+                        <div className="recommendation-explanation">{stream.explanation}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {careerRecommendations.careers?.length > 0 && (
+                <div className="recommendation-section">
+                  <h4 className="recommendation-section-title">Recommended Career Domains</h4>
+                  <div className="recommendation-list">
+                    {careerRecommendations.careers.map((career, index) => (
+                      <div key={index} className="recommendation-item">
+                        <div className="recommendation-name">{career.name}</div>
+                        <div className="recommendation-explanation">{career.explanation}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : loadingCareerRecommendations ? (
+            <div className="loading-spinner">Matching careers to your profile...</div>
+          ) : careerRecommendationsError ? (
+            <p className="section-error-text">{careerRecommendationsError}</p>
+          ) : (
+            <div className="loading-spinner">Preparing your career recommendations...</div>
+          )}
         </div>
 
       {growthProjection && (

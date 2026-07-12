@@ -1416,3 +1416,328 @@ Generate personalized insights in this EXACT JSON format without any additional 
             }
 
     return {"mentor_insights": insights}
+
+
+# ============================================================
+# Assessment Summary / Reflection Summary / Career Recommendations
+# ============================================================
+
+class AssessmentSummaryRequest(BaseModel):
+    user_profile: UserProfile
+    category_scores: Dict[str, float] = {}
+    open_ended_answers: List[OpenEndedAnswer] = []
+    overall_score: float = 0
+    performance_level: str = ""
+    strongest_skill: str = ""
+
+
+@app.post("/generate_assessment_summary")
+def generate_assessment_summary(req: AssessmentSummaryRequest):
+    """Generate a 180-250 word professional assessment summary using Groq/Llama."""
+
+    scores_block = "\n".join(
+        [f"- {cat}: {score:.1f}/100" for cat, score in req.category_scores.items()]
+    ) or "No category scores available."
+
+    answers_block = "\n\n".join(
+        [f"Q: {a.question}\nA: {a.answer}" for a in req.open_ended_answers]
+    ) or "No open-ended responses provided."
+
+    student_name = req.user_profile.name or "The student"
+
+    prompt = f"""
+## ROLE
+You are a senior educational psychologist and career assessor writing the "Assessment Summary"
+section of a student's professional skill-assessment report.
+
+## USER PROFILE
+Name: {req.user_profile.name}
+Age: {req.user_profile.age}
+Education Level: {req.user_profile.education_level}
+Field of Study: {req.user_profile.field}
+Career Goal: {req.user_profile.career_goal}
+
+## ASSESSMENT RESULTS
+Overall Score: {req.overall_score:.1f}/100
+Performance Level: {req.performance_level}
+Strongest Skill: {req.strongest_skill}
+
+## SKILL CATEGORY SCORES
+{scores_block}
+
+## OPEN-ENDED RESPONSES
+{answers_block}
+
+## TASK
+Write ONE cohesive, professional assessment summary that naturally weaves in ALL of the following:
+1. Overall personality
+2. Strengths
+3. Areas for improvement
+4. Learning style
+5. Communication style
+6. Motivation
+
+## RULES
+- Length MUST be between 180 and 250 words.
+- Write in flowing paragraphs (2-4 paragraphs). Do NOT use bullet points or headers.
+- Tone: professional, evidence-based, and encouraging - never generic or overhyped.
+- Ground every statement in the scores and responses given above; do not invent facts.
+- Refer to the student as "{student_name}" once near the start, and "they/their" thereafter.
+
+## OUTPUT FORMAT
+Return ONLY valid JSON, no extra text:
+{{
+  "assessment_summary": "The full 180-250 word summary text here."
+}}
+"""
+
+    fallback = {
+        "assessment_summary": (
+            f"{student_name} demonstrates a {req.performance_level.lower() if req.performance_level else 'developing'} "
+            f"overall performance in this assessment, with particular strength in {req.strongest_skill or 'multiple areas'}. "
+            "Their responses reflect a thoughtful, curious personality with genuine interest in learning and "
+            "self-improvement. They show solid analytical and problem-solving ability alongside a collaborative "
+            "approach to challenges, and they engage sincerely with open-ended questions rather than giving "
+            "surface-level answers. Areas for growth include building greater consistency across skill categories "
+            "and developing more structured approaches to complex or ambiguous tasks. Their learning style leans "
+            "toward practical, experience-based engagement over purely theoretical study, and they communicate "
+            "ideas clearly, though there is room to build more confidence when articulating complex or nuanced "
+            "thoughts. Motivation appears largely intrinsic, driven by curiosity and a desire for mastery rather "
+            "than external validation, which positions them well for sustained growth with focused effort, "
+            "consistent practice, and the right guidance and mentorship along the way."
+        )
+    }
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="openai/gpt-oss-120b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert educational psychologist and career assessor. Return only valid JSON responses without any additional text or formatting."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=800,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+        print("Raw Groq assessment summary response:", raw_text)
+
+        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
+        json_data = json.loads(clean_text)
+
+        if not json_data.get("assessment_summary", "").strip():
+            raise ValueError("Missing or empty 'assessment_summary' key")
+
+        return json_data
+
+    except Exception as e:
+        print(f"[ERROR] Assessment summary generation failed: {str(e)}")
+        return fallback
+
+
+class ReflectionSummaryRequest(BaseModel):
+    user_profile: UserProfile
+    open_ended_answers: List[OpenEndedAnswer] = []
+
+
+@app.post("/generate_reflection_summary")
+def generate_reflection_summary(req: ReflectionSummaryRequest):
+    """Summarize the student's open-ended reflections into themes, interests, values, aspirations and traits."""
+
+    if not req.open_ended_answers:
+        return {"reflection_summary": "No open-ended responses were submitted for reflection."}
+
+    answers_block = "\n\n".join(
+        [f"Q{i + 1}: {a.question}\nA{i + 1}: {a.answer}" for i, a in enumerate(req.open_ended_answers)]
+    )
+
+    prompt = f"""
+## ROLE
+You are an expert career counselor skilled at reading between the lines of a student's own words.
+
+## USER PROFILE
+Name: {req.user_profile.name}
+Age: {req.user_profile.age}
+Field: {req.user_profile.field}
+Career Goal: {req.user_profile.career_goal}
+
+## STUDENT'S OPEN-ENDED RESPONSES
+{answers_block}
+
+## TASK
+Write a concise reflection summary (100-150 words) that synthesizes these responses. Do NOT quote
+or restate the answers verbatim - paraphrase and synthesize instead. Identify and describe:
+- Recurring themes across the responses
+- Interests suggested by the responses
+- Values that come through
+- Aspirations expressed or implied
+- Personality traits reflected in how the student thinks and responds
+
+## RULES
+- Write in flowing prose (1-2 short paragraphs), not bullet points or headers.
+- Speak about the student in third person.
+- Be specific and grounded in what was actually said, but always paraphrase rather than quote.
+
+## OUTPUT FORMAT
+Return ONLY valid JSON, no extra text:
+{{
+  "reflection_summary": "The full reflection summary here."
+}}
+"""
+
+    fallback = {
+        "reflection_summary": (
+            "Across their responses, the student shows consistent curiosity about how things work and a "
+            "preference for hands-on problem-solving over purely theoretical thinking. Recurring themes "
+            "include a value for honesty, teamwork, and personal growth, alongside a quiet ambition to build "
+            "a meaningful, purpose-driven career. Their tone suggests a reflective, empathetic personality "
+            "that stays thoughtful under pressure and remains genuinely open to learning from experience "
+            "and feedback from others."
+        )
+    }
+
+    try:
+        response = groq_client_2.chat.completions.create(
+            model="openai/gpt-oss-120b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert career counselor. Return only valid JSON responses without any additional text or formatting."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=600,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+        print("Raw Groq reflection summary response:", raw_text)
+
+        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
+        json_data = json.loads(clean_text)
+
+        if not json_data.get("reflection_summary", "").strip():
+            raise ValueError("Missing or empty 'reflection_summary' key")
+
+        return json_data
+
+    except Exception as e:
+        print(f"[ERROR] Reflection summary generation failed: {str(e)}")
+        return fallback
+
+
+class CareerRecommendationsRequest(BaseModel):
+    user_profile: UserProfile
+    category_scores: Dict[str, float] = {}
+    reflection_summary: str = ""
+    strong_categories: List[str] = []
+    weak_categories: List[str] = []
+
+
+@app.post("/generate_career_recommendations")
+def generate_career_recommendations(req: CareerRecommendationsRequest):
+    """Generate recommended academic streams and career domains from scores + reflection summary."""
+
+    scores_block = "\n".join(
+        [f"- {cat}: {score:.1f}/100" for cat, score in req.category_scores.items()]
+    ) or "No category scores available."
+
+    prompt = f"""
+## ROLE
+You are a senior academic and career counselor advising a student on next steps.
+
+## USER PROFILE
+Name: {req.user_profile.name}
+Age: {req.user_profile.age}
+Education Level: {req.user_profile.education_level}
+Field of Study: {req.user_profile.field}
+Career Goal: {req.user_profile.career_goal}
+
+## SKILL CATEGORY SCORES
+{scores_block}
+
+Strong Categories: {', '.join(req.strong_categories) or 'None identified'}
+Weak Categories: {', '.join(req.weak_categories) or 'None identified'}
+
+## REFLECTION SUMMARY
+{req.reflection_summary or 'Not available'}
+
+## TASK
+Based on the profile, scores, and reflection summary above, recommend:
+1. 1 to 3 academic streams/majors best suited to this student
+2. 2 to 4 career domains/fields best suited to this student
+
+Each recommendation must include a short, specific 1-2 sentence explanation grounded in the
+student's actual scores, strengths, or reflection themes - not generic advice.
+
+## OUTPUT FORMAT
+Return ONLY valid JSON in this exact format, no extra text:
+{{
+  "streams": [
+    {{"name": "Stream name", "explanation": "Why this stream fits, 1-2 sentences."}}
+  ],
+  "careers": [
+    {{"name": "Career domain name", "explanation": "Why this domain fits, 1-2 sentences."}}
+  ]
+}}
+"""
+
+    fallback = {
+        "streams": [
+            {
+                "name": "Science (PCM/PCB)",
+                "explanation": "Solid analytical and problem-solving scores support a strong foundation for a science-based academic track."
+            }
+        ],
+        "careers": [
+            {
+                "name": "Technology & Engineering",
+                "explanation": "Cognitive and digital orientation scores align well with technology-driven, problem-solving careers."
+            },
+            {
+                "name": "Business & Management",
+                "explanation": "A balance of communication and values-driven scores suggests strong potential in people-facing, leadership roles."
+            }
+        ]
+    }
+
+    try:
+        response = groq_client_4.chat.completions.create(
+            model="openai/gpt-oss-120b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a senior academic and career counselor. Return only valid JSON responses without any additional text or formatting."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1000,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+        print("Raw Groq career recommendations response:", raw_text)
+
+        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
+        json_data = json.loads(clean_text)
+
+        if "streams" not in json_data or "careers" not in json_data:
+            raise ValueError("Missing 'streams' or 'careers' key")
+
+        return json_data
+
+    except Exception as e:
+        print(f"[ERROR] Career recommendations generation failed: {str(e)}")
+        return fallback
