@@ -32,6 +32,26 @@ const clearProgressFromStorage = () =>{
   }
 };
 
+// Mirrors in-progress MCQ state to SQL, tied to the user record from the Home
+// page, so progress survives a cleared localStorage / different browser.
+const saveProgressToDB = async (data) => {
+  try {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) return;
+    await fetch("http://127.0.0.1:8000/save_progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: parseInt(userId, 10),
+        stage: "mcq",
+        data,
+      }),
+    });
+  } catch (e) {
+    console.error("Failed to save MCQ progress to database:", e);
+  }
+};
+
 const loadQuestions = async ({
   setQuestions,
   setCategories,
@@ -166,6 +186,7 @@ const {
 } = location.state || {};
 useEffect(() => {
 if (!hasRestoredState && !loading && questions.length > 0 ) {
+  (async () => {
   let restored = null;
   if(location.state && Object.keys(previousAnswers).length > 0){
     restored = {
@@ -180,6 +201,24 @@ if (!hasRestoredState && !loading && questions.length > 0 ) {
     const saved = loadProgressFromStorage();
     if(saved && saved.answers && Object.keys(saved.answers).length > 0){
       restored = saved;
+    } else {
+      // Nothing in navigation state or localStorage — e.g. localStorage was
+      // cleared and the user logged back in. Fall back to whatever was last
+      // saved to the database for this account.
+      const userId = localStorage.getItem('user_id');
+      if (userId) {
+        try {
+          const res = await fetch(`http://127.0.0.1:8000/get_progress/${userId}/mcq`);
+          if (res.ok) {
+            const { data } = await res.json();
+            if (data && data.answers && Object.keys(data.answers).length > 0) {
+              restored = data;
+            }
+          }
+        } catch (err) {
+          console.error('Failed to restore MCQ progress from the database:', err);
+        }
+      }
     }
   }
 
@@ -227,6 +266,7 @@ if (!hasRestoredState && !loading && questions.length > 0 ) {
   }
 
   setHasRestoredState(true);
+  })();
   }
 }, [loading, questions, hasRestoredState]);
 
@@ -236,18 +276,20 @@ if (!hasRestoredState && !loading && questions.length > 0 ) {
 // state.
 useEffect(() => {
   if (!hasRestoredState) return;
-  saveProgressToStorage({
+  const progressPayload = {
     userInfo,
     answers,
     currentCategory,
     currentQuestionIndex,
     remainingTime,
     categoryProgress
-  });
+  };
+  saveProgressToStorage(progressPayload);
+  saveProgressToDB(progressPayload);
 }, [hasRestoredState, userInfo, answers, currentCategory, currentQuestionIndex, remainingTime, categoryProgress]);
 
 
-const handleMCQCompletion = () => {
+const handleMCQCompletion = async () => {
   console.log("called handlemcq");
   const totalQuestions = questions.length;
   console.log("total questions :",totalQuestions);
@@ -291,7 +333,47 @@ if (question.category) {
 }
   }
 
-  clearProgressFromStorage();
+  // Persist MCQ answers + scores to SQL, tied to the user record created on the Home page
+  const userId = localStorage.getItem("user_id");
+  let savedToDB = false;
+  if (userId) {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/save_mcq_results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: parseInt(userId, 10),
+          answers,
+          total_score: totalScore,
+          max_possible_score: maxPossibleScore,
+          category_scores: categoryScores,
+          max_category_scores: maxCategoryScores,
+        }),
+      });
+      if (res.ok) {
+        savedToDB = true;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Failed to save MCQ results:", errData.detail || res.statusText);
+      }
+    } catch (e) {
+      console.error("Failed to save MCQ results:", e);
+    }
+  } else {
+    console.error("No user_id found in localStorage — MCQ results were not saved to the database.");
+  }
+
+  // Only wipe the in-progress backups once the final results are confirmed
+  // saved — if the save failed, keep the progress around so nothing is lost.
+  if (savedToDB) {
+    clearProgressFromStorage();
+    try {
+      await fetch(`http://127.0.0.1:8000/clear_progress/${userId}/mcq`, { method: "DELETE" });
+    } catch (e) {
+      console.error("Failed to clear saved MCQ progress from the database:", e);
+    }
+  }
+
   navigate('/mcq-completion', {
     state: {
       answers,

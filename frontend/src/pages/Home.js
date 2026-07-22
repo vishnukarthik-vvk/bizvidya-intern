@@ -37,6 +37,61 @@ function Home() {
 
   const navigate = useNavigate();
 
+  // Require login before this page can be used at all.
+  useEffect(() => {
+    const userId = localStorage.getItem('user_id');
+    if (!userId) {
+      navigate('/login');
+    }
+  }, [navigate]);
+
+  // Pull the profile already saved on this account (if any) so a returning
+  // user doesn't have to retype everything on a new device/browser.
+  useEffect(() => {
+    const userId = localStorage.getItem('user_id');
+    if (!userId) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:8000/users/${userId}`);
+
+        if (res.status === 404) {
+          // This user_id no longer exists in the database (e.g. the table was
+          // reset). Clear the stale value instead of looping on the same 404.
+          localStorage.removeItem('user_id');
+          localStorage.removeItem('user_email');
+          navigate('/login');
+          return;
+        }
+
+        if (!res.ok) return;
+        const profile = await res.json();
+
+        setFormData(prev => ({
+          ...prev,
+          fullName: profile.fullName || prev.fullName,
+          age: profile.age ?? prev.age,
+          educationLevel: profile.educationLevel || prev.educationLevel,
+          workExperience: profile.workExperience || prev.workExperience,
+          currentRole: profile.currentRole || prev.currentRole,
+          professionalDomain: profile.professionalDomain || prev.professionalDomain,
+          careerGoals: profile.careerGoals || prev.careerGoals,
+          hobbies: profile.hobbies || prev.hobbies,
+          preferredLanguage: profile.preferredLanguage || prev.preferredLanguage,
+        }));
+      } catch (err) {
+        console.error('Failed to load saved profile:', err);
+      }
+    })();
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('user_id');
+    localStorage.removeItem('user_email');
+    localStorage.removeItem(STORAGE_KEY);
+    navigate('/login');
+  };
+
   // Whenever formData changes, save it so it survives refreshes
   // and coming back from the /assessment page.
   useEffect(() => {
@@ -55,7 +110,16 @@ function Home() {
     }));
   };
 
-   const handleSubmit = (e) => {
+  const handleClearForm = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (err) {
+      console.error('Failed to clear saved form data:', err);
+    }
+    setFormData(defaultFormData);
+  };
+
+   const handleSubmit = async (e) => {
   e.preventDefault();
 
   
@@ -75,25 +139,60 @@ function Home() {
     return;
   }
 
-  const finalFormData = {
-    ...formData,
-    professionalDomain: professionalDomainValue,
-    careerGoals: careerGoalsValue
-  };
-
-  console.log('Form submitted:', finalFormData);
-
-  navigate('/assessment', { state: { userInfo: finalFormData } });
+ const finalFormData = {
+  ...formData,
+  professionalDomain: professionalDomainValue,
+  careerGoals: careerGoalsValue
 };
 
-  const handleClearForm = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setFormData(defaultFormData);
-  };
+try {
+  const userId = localStorage.getItem("user_id");
+  if (!userId) {
+    navigate("/login");
+    return;
+  }
 
+  const response = await fetch(`http://127.0.0.1:8000/users/${userId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(finalFormData),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    if (response.status === 404) {
+      localStorage.removeItem("user_id");
+      localStorage.removeItem("user_email");
+      alert("Your session has expired or your account could not be found. Please log in again.");
+      navigate("/login");
+      return;
+    }
+    throw new Error(data.detail || "Failed to save user.");
+  }
+
+
+  console.log(data);
+
+  navigate("/assessment", {
+    state: {
+      userInfo: finalFormData,
+      userId: userId,
+    },
+  });
+
+} catch (error) {
+  console.error(error);
+  alert("Failed to save user information.");
+}
+   };
   return (
     <div className="container">
       <header>
+        <button type="button" className="clear-button" style={{ float: 'right' }} onClick={handleLogout}>
+          Log out
+        </button>
         <h1>Professional Skill Assessment</h1>
         <p className="subtitle">Discover your strengths and unlock your potential with our comprehensive skill evaluation designed for students and professionals</p>
       </header>

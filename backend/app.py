@@ -15,10 +15,14 @@ from google.oauth2 import service_account
 import random
 from groq import Groq
 import requests
-
-
+from database import engine,Base,get_db
+from models.models import User, MCQResult, OpenEndedResult, AssessmentReport, AssessmentProgress
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from schemas import UserCreate, MCQResultCreate, OpenEndedResultCreate, AssessmentReportSave, SignupRequest, LoginRequest, ProgressSave
 load_dotenv() 
 
+Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 origins = [  
@@ -41,10 +45,9 @@ app.add_middleware(
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 gemini_model = genai.GenerativeModel("gemini-2.5-pro")
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-groq_client_2 = Groq(api_key=os.getenv("GROQ_API_KEY_2"))
-groq_client_3 = Groq(api_key=os.getenv("GROQ_API_KEY_3"))
-groq_client_4 = Groq(api_key=os.getenv("GROQ_API_KEY_4"))
+
+
+from services.llm_services import llm_services
 
 def load_questions():
     df = pd.read_csv("Assessment_chat_v2.csv")
@@ -85,155 +88,6 @@ class OpenEndedRequest(BaseModel):
 def root():
     return {"message": "Skill Assessment Backend Running"}
 
-@app.post("/generate_open_ended_questions")
-def generate_open_ended_questions(req: OpenEndedRequest):
-    prompt = f"""
-You are an expert skill assessor tasked with generating 1 personalized open-ended question that covers the following 5 core skill categories:
-
-1. Cognitive & Creative Skills  
-2. Work & Professional Behavior  
-3. Emotional & Social Competence  
-4. Personal Management & Wellness  
-5. Family & Relationships
-
-Instructions:
-- Use the user's profile and their MCQ performance to generate *1 diverse, personalized, open-ended question* that covers all 5 categories collectively (at least once per category ).
-- The question should be mapped to a *primary category* and optionally *secondary categories*.
-- Prioritize weaker-scoring categories from the MCQs when assigning primary categories.
-- Question should be clear, real-world oriented, and require a reflective response.
-
-User Profile:
-- Age: {req.user_profile.age}
-- Education Level: {req.user_profile.education_level}
-- Field of Study/Profession: {req.user_profile.field}
-- Interests: {', '.join(req.user_profile.interests)}
-- Aspirations: {req.user_profile.career_goal}
-              
-MCQ Scores by Category (0–100):
-{{
-  "Subject Interest & Domain Curiosity": {req.mcq_scores.Subject_Interest_Domain_Curiosity},
-  "Cognitive & Creative Skills": {req.mcq_scores.Cognitive_and_Creative_Skills},
-  "Academic Aptitude & Learning Style": {req.mcq_scores.Academic_Aptitude_Learning_Style},
-  "Digital & Technological Orientation": {req.mcq_scores.Digital_Technological_Orientation},
-  "Values & Lifestyle Priorities": {req.mcq_scores.Values_Lifestyle_Priorities},
-  "Financial Awareness & Constraints": {req.mcq_scores.Financial_Awareness_Constraints},
-  "Risk Appetite & Ambiguity Tolerance": {req.mcq_scores.Risk_Appetite_Ambiguity_Tolerance},
-  "Emotional & Social Competence": {req.mcq_scores.Emotional_and_Social_Competence},
-  "Communication & Language Preference": {req.mcq_scores.Communication_Language_Preference},
-  "Personal Management & Wellness": {req.mcq_scores.Personal_Management_Wellness}
-}}
-
-Return ONLY in the following JSON format:
-{{
-  "questions": [
-    {{
-      "question": "Describe a time you had to resolve a misunderstanding with a family member.",
-      "primary_category": "Family & Relationships",
-      "secondary_categories": ["Emotional & Social Competence"]
-    }}
-  ]
-}}
-Only return valid JSON. Do not include anything else.
-    """
-    try:
-        
-        response = groq_client_3.chat.completions.create(
-            model="openai/gpt-oss-120b", 
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert skill assessor. Return only valid JSON responses without any additional text or formatting."
-                },
-                {
-                    "role": "user", 
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=1000,
-            top_p=1,
-            stream=False,
-            stop=None
-        )
-        
-        raw_text = response.choices[0].message.content.strip()
-        print("Raw Groq response:", raw_text)
-
-       
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-
-       
-        json_data = json.loads(clean_text)
-
-        if "questions" not in json_data:
-            raise HTTPException(status_code=500, detail="Response missing 'questions' key")
-
-        return json_data 
-
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {e}")
-        print(f"Raw response: {raw_text}")
-        raise HTTPException(status_code=500, detail="Failed to parse JSON from Groq API response")
-    except Exception as e:
-        print(f"Groq API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Groq API error: {e}")
-    
-
-def make_groq_request(prompt: str, system_message: str = "You are a helpful AI assistant. Return only valid JSON responses without any additional text or formatting.", max_tokens: int = 1500, temperature: float = 0.7):
-    """Helper function to make Groq API requests with consistent error handling"""
-    try:
-        response = groq_client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=1,
-            stream=False,
-            stop=None
-        )
-        
-        raw_text = response.choices[0].message.content.strip()
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        return json.loads(clean_text), raw_text
-        
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to parse JSON from Groq API response")
-    except Exception as e:
-        print(f"Groq API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Groq API error: {e}")
-    
-
-def make_groq_request_2(prompt: str, system_message: str = "You are a helpful AI assistant. Return only valid JSON responses without any additional text or formatting.", max_tokens: int = 1500, temperature: float = 0.7):
-    """Helper function to make Groq API requests with consistent error handling"""
-    try:
-        response = groq_client_2.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=1,
-            stream=False,
-            stop=None
-        )
-        
-        raw_text = response.choices[0].message.content.strip()
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        return json.loads(clean_text), raw_text
-        
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to parse JSON from Groq API response")
-    except Exception as e:
-        print(f"Groq API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Groq API error: {e}")
-
 
 class OpenEndedAnswer(BaseModel):
     question: str
@@ -243,51 +97,267 @@ class OpenEndedAnswer(BaseModel):
 class ScoreOpenEndedRequest(BaseModel):
     user_profile: UserProfile
     answers: List[OpenEndedAnswer]
+from prompts.score_openended_responses import (
+    SCORE_OPENENDED_RESPONSES_PROMPT,
+    SCORE_OPENENDED_RESPONSES_SYSTEM_PROMPT,
+)
+from schemas import UserCreate, MCQResultCreate, OpenEndedResultCreate, AssessmentReportSave, SignupRequest, LoginRequest
+from Auth import hash_password , verify_password
+@app.post("/signup")
+def signup(payload: SignupRequest , db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(
+            status_code = 400,
+            detail = "please enter valid email address.",
+        )
+    if len(payload.password) < 8:
+        raise HTTPException(
+            status_code = 400,
+            detail = "password must contain atleast 8 characters",
+        )
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(
+            status_code = 400,
+            detail = "email already in use",
+        )
+    db_user = User(
+        email = email,
+        hashed_password = hash_password(payload.password),
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return{
+        "message":"account created sucessfully",
+        "user_id": db_user.id,
+        "email" : db_user.email
+    }
+
+@app.post("/save_progress")
+def save_progress(payload: ProgressSave, db: Session = Depends(get_db)):
+    existing = db.query(AssessmentProgress).filter(
+        AssessmentProgress.user_id == payload.user_id,
+        AssessmentProgress.stage == payload.stage
+    ).first()
+
+    if existing:
+        existing.progress_data = json.dumps(payload.data)
+    else:
+        existing = AssessmentProgress(
+            user_id=payload.user_id,
+            stage=payload.stage,
+            progress_data=json.dumps(payload.data),
+        )
+        db.add(existing)
+
+    db.commit()
+    db.refresh(existing)
+
+    return {"message": "Progress saved successfully", "stage": payload.stage}
+
+
+@app.get("/get_progress/{user_id}/{stage}")
+def get_progress(user_id: int, stage: str, db: Session = Depends(get_db)):
+    record = db.query(AssessmentProgress).filter(
+        AssessmentProgress.user_id == user_id,
+        AssessmentProgress.stage == stage
+    ).first()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="No saved progress found")
+
+    return {"stage": record.stage, "data": json.loads(record.progress_data)}
+
+
+@app.delete("/clear_progress/{user_id}/{stage}")
+def clear_progress(user_id: int, stage: str, db: Session = Depends(get_db)):
+    record = db.query(AssessmentProgress).filter(
+        AssessmentProgress.user_id == user_id,
+        AssessmentProgress.stage == stage
+    ).first()
+
+    if record:
+        db.delete(record)
+        db.commit()
+
+    return {"message": "Progress cleared successfully", "stage": stage}
+
+@app.post("/users")
+def create_user(user : UserCreate , db : Session = Depends(get_db)):
+    db_user = User(
+        fullName = user.fullName,
+        age = user.age,
+        educationLevel=user.educationLevel,
+        current_role = user.currentRole,
+        work_experience = user.workExperience,
+        professional_domain = user.professionalDomain,
+        career_goal = user.careerGoals,
+        hobbies = user.hobbies,
+        preferred_language = user.preferredLanguage
+
+    )
+
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return{
+        "message":"user created successfully",
+        "user_id": db_user.id
+    }
+
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "fullName": db_user.fullName,
+        "age": db_user.age,
+        "educationLevel": db_user.educationLevel,
+        "workExperience": db_user.work_experience,
+        "currentRole": db_user.current_role,
+        "professionalDomain": db_user.professional_domain,
+        "careerGoals": db_user.career_goal,
+        "hobbies": db_user.hobbies,
+        "preferredLanguage": db_user.preferred_language,
+    }
+
+
+@app.put("/users/{user_id}")
+def update_user(user_id: int, user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db_user.fullName = user.fullName
+    db_user.age = user.age
+    db_user.educationLevel = user.educationLevel
+    db_user.work_experience = user.workExperience
+    db_user.current_role = user.currentRole
+    db_user.professional_domain = user.professionalDomain
+    db_user.career_goal = user.careerGoals
+    db_user.hobbies = user.hobbies
+    db_user.preferred_language = user.preferredLanguage
+
+    db.commit()
+    db.refresh(db_user)
+
+    return {"message": "user updated successfully", "user_id": db_user.id}
+
+
+@app.post("/login")
+
+@app.post("/login")
+def login(payload:LoginRequest , db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    db_user = db.query(User).filter(User.email == email).first()
+
+    if not db_user or not verify_password(payload.password , db_user.hashed_password):
+        raise HTTPException(
+            status_code = 400,
+            detail = "Invalid email or password",
+        )
+    
+    return {
+        "message" : "Login sucessful",
+        "user_id" : db_user.id,
+        "email": db_user.email,
+        "fullName" : db_user.fullName,
+    }
+
+
+@app.post("/save_mcq_results")
+def save_mcq_results(payload: MCQResultCreate, db: Session = Depends(get_db)):
+    db_result = MCQResult(
+        user_id=payload.user_id,
+        answers=json.dumps(payload.answers),
+        total_score=payload.total_score,
+        max_possible_score=payload.max_possible_score,
+        category_scores=json.dumps(payload.category_scores),
+        max_category_scores=json.dumps(payload.max_category_scores),
+    )
+    db.add(db_result)
+    db.commit()
+    db.refresh(db_result)
+
+    return {
+        "message": "MCQ results saved successfully",
+        "result_id": db_result.id
+    }
+
+
+@app.post("/save_open_ended_results")
+def save_open_ended_results(payload: OpenEndedResultCreate, db: Session = Depends(get_db)):
+    db_result = OpenEndedResult(
+        user_id=payload.user_id,
+        answers=json.dumps(payload.answers),
+        scores=json.dumps(payload.scores),
+    )
+    db.add(db_result)
+    db.commit()
+    db.refresh(db_result)
+
+    return {
+        "message": "Open-ended results saved successfully",
+        "result_id": db_result.id
+    }
+
+
+@app.post("/save_assessment_report")
+def save_assessment_report(payload: AssessmentReportSave, db: Session = Depends(get_db)):
+    existing = db.query(AssessmentReport).filter(
+        AssessmentReport.user_id == payload.user_id
+    ).first()
+
+    if existing:
+        existing.report_data = json.dumps(payload.report)
+    else:
+        existing = AssessmentReport(
+            user_id=payload.user_id,
+            report_data=json.dumps(payload.report),
+        )
+        db.add(existing)
+
+    db.commit()
+    db.refresh(existing)
+
+    return {
+        "message": "Assessment report saved successfully",
+        "user_id": payload.user_id
+    }
+
 
 @app.post("/score_open_ended_responses")
 def score_open_ended_responses(req: ScoreOpenEndedRequest):
     all_scores = []
-    clients = [groq_client, groq_client_2, groq_client_3]
 
     for idx, q in enumerate(req.answers):
-        prompt = f"""Score this open-ended answer for the listed skill categories.
+        prompt = SCORE_OPENENDED_RESPONSES_PROMPT.format(
+            age=req.user_profile.age,
+            education_level=req.user_profile.education_level,
+            field=req.user_profile.field,
+            career_goal=req.user_profile.career_goal,
+            question_number=idx + 1,
+            question=q.question,
+            answer=q.answer,
+            categories=", ".join(q.categories) if q.categories else
+                "Subject Interest & Domain Curiosity, Cognitive & Creative Skills, Academic Aptitude & Learning Style, Digital & Technological Orientation, Values & Lifestyle Priorities, Financial Awareness & Constraints, Risk Appetite & Ambiguity Tolerance, Emotional & Social Competence, Communication & Language Preference, Personal Management & Wellness",
+        )
 
-User: Age {req.user_profile.age}, {req.user_profile.education_level}, {req.user_profile.field}, Goal: {req.user_profile.career_goal}
-
-Question {idx+1}: {q.question}
-Answer: {q.answer}
-Categories to score: {', '.join(q.categories) if q.categories else "Subject Interest & Domain Curiosity, Cognitive & Creative Skills, Academic Aptitude & Learning Style, Digital & Technological Orientation, Values & Lifestyle Priorities, Financial Awareness & Constraints, Risk Appetite & Ambiguity Tolerance, Emotional & Social Competence, Communication & Language Preference, Personal Management & Wellness"}
-
-For each category assign a score 0-100 and a 1-line justification.
-Return ONLY valid JSON:
-{{
-  "scores": [
-    {{"question": {idx+1}, "category": "Category Name", "score": 75, "justification": "Reason."}}
-  ]
-}}"""
-
-        try:
-            client = clients[idx % len(clients)]
-            response = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[
-                    {"role": "system", "content": "You are a skill evaluator. Return only valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1500,
-                top_p=1,
-                stream=False,
-                stop=None
-            )
-            raw = response.choices[0].message.content.strip()
-            clean = re.sub(r"^```json\s*|```$", "", raw, flags=re.DOTALL).strip()
-            data = json.loads(clean)
-            all_scores.extend(data.get("scores", []))
-
-        except Exception as e:
-            print(f"Groq error on question {idx+1}: {e}")
-            raise HTTPException(status_code=500, detail=f"Groq API error on Q{idx+1}: {e}")
+        data,raw = llm_services.generate(
+            prompt=prompt,
+            system_message=SCORE_OPENENDED_RESPONSES_SYSTEM_PROMPT,
+            client = (idx %3)+1,
+            max_tokens = 1500,
+            temperature=0.7,
+        )
+        all_scores.extend(data.get("scores", []))
 
     return {"scores": all_scores}
 
@@ -308,39 +378,26 @@ BENCHMARK_TOOLTIPS = {
     "Family & Relationships": "Reach 60% benchmark by practicing empathy and teamwork to excel"
 }
 
-
+from prompts.tooltips import (
+    TOOLTIP_PROMPT,
+    TOOLTIP_SYSTEM_PROMPT,
+)
 @app.post("/generate_tooltips")
 def generate_tooltip(req: TooltipRequest):
-    prompt = f"""
-As a career advisor AI, generate a single personalized tooltip for a skill category comparison.
 
-[User Profile]
-Education: {req.user_profile.education_level}
-Experience: Not specified
-Domain: {req.user_profile.field}
-Career Goal: {req.user_profile.career_goal}
-
-[Skill Category]
-{req.category}:
-- Your Score: {req.user_score:.1f}%
-- Benchmark: {req.benchmark_score}%
-
-Instructions:
-1. Create only ONE tooltip (max 30 words).
-2. Acknowledge current performance.
-3. Provide constructive feedback.
-4. Use an encouraging and motivational tone.
-
-Return in JSON format:
-{{
-    "user_tooltip": "Your personalized feedback..."
-}}
-"""
-
+    prompt = TOOLTIP_PROMPT.format(
+        education_level=req.user_profile.education_level,
+        field=req.user_profile.field,
+        career_goal=req.user_profile.career_goal,
+        category=req.category,
+        user_score=req.user_score,
+        benchmark_score=req.benchmark_score,
+    )
     try:
-        json_data, raw_text = make_groq_request(
-            prompt,
-            "You are a career advisor AI. Return only valid JSON responses without any additional text or formatting."
+        json_data, raw_text = llm_services.generate(
+            prompt=prompt,
+            system_message=TOOLTIP_SYSTEM_PROMPT,
+            client=1,
         )
         print("Raw Groq tooltip response:", raw_text)
 
@@ -372,7 +429,10 @@ class GrowthProjectionRequest(BaseModel):
     benchmark_scores: Dict[str, float]
     tier: str  
 
-
+from prompts.growth_projection import (
+    GROWTH_PROJECTION_PROMPT,
+    GROWTH_PROJECTION_SYSTEM_PROMPT,
+)
 @app.post("/generate_growth_projection")
 def generate_growth_projection(req: GrowthProjectionRequest):
     """Career Growth Projection Generator – points calculated locally, steps from LLM"""
@@ -393,38 +453,23 @@ def generate_growth_projection(req: GrowthProjectionRequest):
         "tier": req.tier
     }
 
-   
-    prompt = f"""
-## ROLE
-You are an expert career coach. Generate exactly 3 actionable steps.
+    prompt = GROWTH_PROJECTION_PROMPT.format(
+        name=req.user_data.name,
+        education=req.user_data.education_level,
+        experience=req.user_data.exp_level,
+        domain=req.user_data.domain,
+        career_goal=req.user_data.career_goal,
+    )
 
-## USER PROFILE
-Name: {req.user_data.name}
-Education: {req.user_data.education_level}
-Experience: {req.user_data.exp_level}
-Domain: {req.user_data.domain}
-Career Goal: {req.user_data.career_goal}
-
-## RULES
-- Max 15 words per step
-- Measurable, specific, and relevant to the domain
-- Use strong action verbs
-- Return only valid JSON:
-{{
-  "action_steps": [
-    "Step 1 here",
-    "Step 2 here",
-    "Step 3 here"
-  ]
-}}
-"""
 
     try:
-        json_data, raw_text = make_groq_request_2(
-            prompt,
-            "You are an expert career analyst. Return only valid JSON.",
-            max_tokens=300
+        json_data, raw_text = llm_services.generate(
+            prompt=prompt,
+            system_message=GROWTH_PROJECTION_SYSTEM_PROMPT,
+            client=2,
+            max_tokens=300,
         )
+
         print("Raw Groq action steps response:", raw_text)
 
         action_steps = json_data.get("action_steps", [])
@@ -460,6 +505,10 @@ class MarketAnalysisRequest(BaseModel):
     benchmark_scores: Dict[str, float]
     tier:str
 
+from prompts.generate_market_analysis import (
+    MARKET_ANALYSIS_PROMPT,
+    MARKET_ANALYSIS_SYSTEM_PROMPT,
+)
 @app.post("/generate_market_analysis")
 def generate_market_analysis(req: MarketAnalysisRequest):
     user_data = {
@@ -477,50 +526,22 @@ def generate_market_analysis(req: MarketAnalysisRequest):
     benchmark_scores = req.benchmark_scores
     tier=req.tier
 
-    # Prompt for Groq
-    MARKET_ANALYSIS_PROMPT = f"""
-As a senior AI career strategist, generate an honest, constructive market position analysis.
-
-[User Profile]
-- Name: {user_data.get("name", "User")}
-- Education: {user_data.get("education", "Not specified")}
-- Experience Level: {user_data.get("exp_level", "Not specified")}
-- Domain: {user_data.get("domain", "Not specified")}
-- Career Goal: {user_data.get("career_goal", "Not specified")}
-
-[Assessment Results]
-- Combined Score: {score:.1f}/100
-- Career Tier: {tier}
-- Market Percentile: {percentile:.1f}%
-- Strengths: {', '.join(strengths) if strengths else 'None'}
-- Weaknesses: {', '.join(weaknesses) if weaknesses else 'None'}
-
-[Market Benchmarks]
-{', '.join([f"{cat}: {val}%" for cat, val in benchmark_scores.items()])}
-
-### INSTRUCTIONS
-1. Return each section as 1–2 short bullet points.
-2. Tone: supportive but *realistic* and *frank* — don't overhype low scores.
-3. If the percentile is low, acknowledge it directly and suggest improvement.
-4. Be second-person (e.g., "You have shown…"). Avoid long paragraphs.
-5. Label the tier, experience, salary, and give overall feedback.
-
-### OUTPUT JSON FORMAT:
-{{
-  "tier": {{
-    "label": "{tier}",
-    "bullets": ["...", "...", "..."]
-  }},
-  "experience": {{
-    "label": "Estimated experience range",
-    "bullets": ["...", "..."]
-  }},
-  "salary": {{
-    "label": "Expected salary range",
-    "bullets": ["...", "..."]
-  }}
-}}
-"""
+    prompt = MARKET_ANALYSIS_PROMPT.format(
+        name=user_data.get("name", "User"),
+        education=user_data.get("education", "Not specified"),
+        exp_level=user_data.get("exp_level", "Not specified"),
+        domain=user_data.get("domain", "Not specified"),
+        career_goal=user_data.get("career_goal", "Not specified"),
+        score=score,
+        tier=tier,
+        percentile=percentile,
+        strengths=", ".join(strengths) if strengths else "None",
+        weaknesses=", ".join(weaknesses) if weaknesses else "None",
+        benchmark_scores=", ".join(
+            f"{cat}: {val}%"
+            for cat, val in benchmark_scores.items()
+        ),
+    )
 
     # Fallback response
     def get_fallback_market_analysis():
@@ -552,17 +573,13 @@ As a senior AI career strategist, generate an honest, constructive market positi
 
     # Groq integration
     try:
-        response = groq_client_3.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {"role": "system", "content": "You are a senior AI career strategist. Return only valid JSON responses without any additional text or formatting."},
-                {"role": "user", "content": MARKET_ANALYSIS_PROMPT}
-            ],
-            temperature=0.7, max_tokens=2000, top_p=1, stream=False, stop=None
+        json_data,raw_text = llm_services.generate(
+            prompt=prompt,
+            system_message=MARKET_ANALYSIS_SYSTEM_PROMPT,
+            client = 3,
+            max_tokens=2000,
+
         )
-        raw_text = response.choices[0].message.content.strip()
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        json_data = json.loads(clean_text)
         print("Raw Groq market analysis response:", raw_text)
 
         required_keys = ["tier", "experience", "salary"]
@@ -585,54 +602,28 @@ class PeerBenchmarkRequest(BaseModel):
     weak_categories: List[str]
     benchmarks: Dict[str, float]
 
+
+from prompts.peer_benchmark import (
+    PEER_BENCHMARK_PROMPT,
+    PEER_BENCHMARK_SYSTEM_PROMPT,
+)
 @app.post("/generate_peer_benchmark")
 def generate_peer_benchmark(req: PeerBenchmarkRequest):
     """Generate peer benchmark and in-demand traits analysis report using groq_client_2"""
 
-    prompt = f"""
-## ROLE
-You are acting as a **career market intelligence analyst** for a skill-assessment platform.  
-Your goal: Generate **highly personalized, market-aligned insights** that compare the user's performance to peers and map their skills to in-demand industry traits.
+    prompt = PEER_BENCHMARK_PROMPT.format(
+        name=req.user_data.name,
+        domain=req.user_data.domain,
+        career_goal=req.user_data.career_goal,
+        exp_level=req.user_data.exp_level,
+        combined_score=req.combined_score,
+        mcq_scores=json.dumps(req.mcq_scores),
+        open_scores=json.dumps(req.open_scores),
+        strong_categories=", ".join(req.strong_categories) or "None",
+        weak_categories=", ".join(req.weak_categories) or "None",
+        benchmarks=json.dumps(req.benchmarks),
+    )
 
----
-
-## CONTEXT
-- Name: {req.user_data.name}
-- Domain: {req.user_data.domain}
-- Career Goal: {req.user_data.career_goal}
-- Experience Level: {req.user_data.exp_level}
-- Combined Score: {req.combined_score:.1f}/100
-- MCQ Scores: {json.dumps(req.mcq_scores)}
-- Open-Ended Scores: {json.dumps(req.open_scores)}
-- Strong Categories: {', '.join(req.strong_categories) or 'None'}
-- Weak Categories: {', '.join(req.weak_categories) or 'None'}
-- Benchmarks: {json.dumps(req.benchmarks)}
-
----
-
-1. **Percentile Positioning**  
-   - Predict the user's skill percentile vs. peers in the same **domain & career goal** (e.g., "Top 72% among final-year AI engineering students").  
-   - Justify percentile using **peer performance trends or aggregated test-taker data**.
-
-2. **Peer Benchmark Narrative**  
-   - Write **1 engaging sentence** comparing the user to typical peers, highlighting both competitive edges and gaps.
-
-3. **In-Demand Traits Mapping**  
-   - Map **2 in-demand traits** (from current job market, internships, or hiring trends) to the user's strongest/weakest areas.  
-   - Be **specific** (e.g., "Your high score in Work Behavior aligns with demand for reliable agile team contributors").
-
-Return ONLY valid JSON in this format:
-{{
-  "peer_benchmark": {{
-    "percentile": "Top 72% among peers in {req.user_data.domain}",
-    "narrative": "Your performance outpaces many peers in problem-solving, but lags in communication skills.",
-    "in_demand_traits": [
-      "Strong analytical thinking aligns with current hiring demand for data-driven roles",
-      "Moderate teamwork scores limit opportunities in agile-based internships"
-    ]
-  }}
-}}
-"""
 
     def fallback_response():
         return {
@@ -647,32 +638,14 @@ Return ONLY valid JSON in this format:
         }
 
     try:
-        response = groq_client_4.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert skill assessor. Return only valid JSON responses without any additional text or formatting."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=1000,
-            top_p=1,
-            stream=False
+
+        json_data , raw_text = llm_services.generate(
+            prompt = prompt,
+            client = 4,
+            max_tokens= 2000,
+            system_message=PEER_BENCHMARK_SYSTEM_PROMPT,
+
         )
-
-        raw_text = response.choices[0].message.content.strip()
-        print("Raw Groq peer benchmark response:", raw_text)
-
-        # Clean markdown JSON fences if present
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-
-        json_data = json.loads(clean_text)
-
         if "peer_benchmark" not in json_data:
             raise HTTPException(status_code=500, detail="Response missing 'peer_benchmark' key")
 
@@ -697,6 +670,11 @@ class ActionPlanRequest(BaseModel):
     moderate_categories: List[str]
     weak_categories: List[str]
 
+
+from prompts.action_plan import (
+    ACTION_PLAN_PROMPT,
+    ACTION_PLAN_SYSTEM_PROMPT,
+)
 @app.post("/generate_action_plan")
 def generate_action_plan(req: ActionPlanRequest):
     """Generate a personalized 90-day roadmap based on skill scores and benchmarks"""
@@ -712,105 +690,34 @@ def generate_action_plan(req: ActionPlanRequest):
     current_avg = np.mean(list(combined_scores.values()))
 
     # Groq prompt
-    prompt = f"""
-## ROLE  
-You are a **personalized career coach and skill strategist**.  
-Your task: **Design a hyper-personalized, practical 90-day career development roadmap** for a professional, based entirely on their **scores, benchmark gaps, and profile**.
+   
+    score_vs_benchmark = "\n".join(
+        f"- {cat}: {combined_scores.get(cat, 0)} vs {req.market_benchmarks.get(cat, 'N/A')}"
+        for cat in combined_scores
+    )
 
----
-
-## CONTEXT – User Data  
-Name: {req.user_data.name}  
-Education: {req.user_data.education_level}  
-Experience Level: {req.user_data.exp_level}  
-Professional Domain: {req.user_data.domain}  
-Career Goal: {req.user_data.career_goal}  
-
-Current Overall Score: {current_avg:.1f}  
-Category-wise Scores vs Market Benchmarks:  
-{chr(10).join([
-    f"- {cat}: {combined_scores.get(cat, 0)} vs {req.market_benchmarks.get(cat, 'N/A')}"
-    for cat in combined_scores
-])}
-
-Strong Categories: {', '.join(req.strong_categories) or 'None'}  
-Moderate Categories: {', '.join(req.moderate_categories) or 'None'}  
-Weak Categories: {', '.join(req.weak_categories) or 'None'}  
-
----
-
-## TASK – 90-Day Roadmap Only  
-
-✅ **STRICTLY output ONLY a 3-phase roadmap** (no ROI narrative, no extra sections).  
-✅ **Make it feel like a website-style career roadmap** → clean, simple, motivational.  
-✅ **Be extremely personalized**: Mention the user's domain, role, and specific skill gaps.  
-✅ **Use bullet points, short sentences, and practical weekly steps.**  
-✅ **Include measurable progress milestones.**  
-
----
-
-### **OUTPUT FORMAT (STRICT)**
-
-90-DAY PERSONALIZED ROADMAP
-
-### PHASE 1 (0–30 Days) – [Motivational Title]
-- **Focus Areas:** [Specific weak categories & why (personalized)]
-- **Weekly Actions:**
-  - Week 1: [Specific step]
-  - Week 2: [Step]
-  - Week 3: [...]
-  - Week 4: [...]
-- **Milestone by Day 30:** [Score target or tangible skill achievement]
-
-### PHASE 2 (31–60 Days) – [Motivational Title]
-- **Focus Areas:** [Moderate skill clusters, why they matter for career goal]
-- **Weekly Actions:**
-  - Week 5: [...]
-  - Week 6: [...]
-  - Week 7: [...]
-  - Week 8: [...]
-- **Milestone by Day 60:** [Clear achievement]
-
-### PHASE 3 (61–90 Days) – [Motivational Title]
-- **Focus Areas:** [Strong categories → leadership & visibility, very role-specific]
-- **Weekly Actions:**
-  - Week 9: [...]
-  - Week 10: [...]
-  - Week 11: [...]
-  - Week 12: [...]
-- **Milestone by Day 90:** [E.g., "Score crosses 75%+, ready for mid-level role"]
-
----
-
-## STYLE RULES
-- Be **personal, encouraging, and clear** (like talking directly to the user).
-- Avoid paragraphs – keep it **structured and scannable**.
-- **DO NOT** generate generic career roadmaps found online – strictly use **this user's data**.
-- No extra ROI text, no reporting metrics – **ONLY the roadmap**.
-"""
+    prompt = ACTION_PLAN_PROMPT.format(
+        name=req.user_data.name,
+        education=req.user_data.education_level,
+        exp_level=req.user_data.exp_level,
+        domain=req.user_data.domain,
+        career_goal=req.user_data.career_goal,
+        current_avg=current_avg,
+        score_vs_benchmark=score_vs_benchmark,
+        strong_categories=", ".join(req.strong_categories) or "None",
+        moderate_categories=", ".join(req.moderate_categories) or "None",
+        weak_categories=", ".join(req.weak_categories) or "None",
+    )
 
     try:
         
-        response = groq_client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a personalized career coach and skill strategist. Generate detailed, practical career roadmaps based on user data."
-                },
-                {
-                    "role": "user", 
-                    "content": prompt
-                }
-            ],
+        
+        roadmap_text = llm_services.generate_text(
+            prompt = prompt,
+            system_message=ACTION_PLAN_SYSTEM_PROMPT,
             temperature=0.8,
             max_tokens=2500,
-            top_p=1,
-            stream=False,
-            stop=None
         )
-        
-        roadmap_text = response.choices[0].message.content.strip()
         print("Raw Groq action plan response:", roadmap_text)
         
         return {"roadmap_text": roadmap_text}
@@ -1240,42 +1147,27 @@ class GrowthOpportunitiesRequest(BaseModel):
     scores: Dict[str, float]
     benchmarks: Dict[str, float]
 
+from prompts.growth_opportunities import (
+    GROWTH_OPPORTUNITIES_PROMPT,
+    GROWTH_OPPORTUNITIES_SYSTEM_PROMPT,
+)
 @app.post("/generate_growth_opportunities")
 def generate_growth_opportunities(req: GrowthOpportunitiesRequest):
     """
     Generate 3–4 personalized growth opportunities using Groq
     """
-    prompt = f"""
-## ROLE
-You are a career development strategist. Generate 3-4 personalized growth opportunities.
+    score_benchmarks = "\n".join(
+        f"- {cat}: {req.scores.get(cat, 0):.1f} (Benchmark: {req.benchmarks.get(cat, 0)})"
+        for cat in req.scores
+    )
+    prompt = GROWTH_OPPORTUNITIES_PROMPT.format(
+        name=req.user_profile.name,
+        domain=req.user_profile.domain,
+        career_goal=req.user_profile.career_goal,
+        exp_level=req.user_profile.exp_level,
+        score_benchmarks=score_benchmarks,
+    )
 
-## USER PROFILE
-Name: {req.user_profile.name}
-Domain: {req.user_profile.domain}
-Career Goal: {req.user_profile.career_goal}
-Experience Level: {req.user_profile.exp_level}
-
-## SKILL SCORES vs BENCHMARKS
-{chr(10).join([f"- {cat}: {req.scores.get(cat, 0):.1f} (Benchmark: {req.benchmarks.get(cat, 0)})" for cat in req.scores])}
-
-## TASK
-- Generate 3-4 growth opportunities that leverage strengths and moderate skills
-- Focus on future-focused career advancement
-- Make each opportunity specific and actionable
-- Include why it's recommended based on their profile
-
-## OUTPUT FORMAT (JSON)
-{{
-  "opportunities": [
-    {{
-      "category": "Category Name",
-      "opportunity": "Description of opportunity",
-      "why": "Reason why recommended"
-    }},
-    ...
-  ]
-}}
-"""
 
     fallback = {
         "opportunities": [
@@ -1298,28 +1190,18 @@ Experience Level: {req.user_profile.exp_level}
     }
 
     try:
-        response = groq_client_2.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {"role": "system", "content": "You are an expert skill assessor. Return only valid JSON responses without any additional text or formatting."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=1000,
-            top_p=1,
-            stream=False
+        prased,raw_text = llm_services.generate(
+            prompt = prompt,
+            system_message =  GROWTH_OPPORTUNITIES_SYSTEM_PROMPT,
+            client = 2,
+            max_tokens = 1000,
         )
-
-        raw_text = response.choices[0].message.content.strip()
         print("Raw Groq response:", raw_text)
 
-        clean = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        parsed = json.loads(clean)
-
-        if "opportunities" not in parsed:
+        if "opportunities" not in prased:
             raise ValueError("Missing 'opportunities' key")
 
-        return parsed
+        return prased
 
     except Exception as e:
         print(f"[ERROR] Growth opportunity generation failed: {str(e)}")
@@ -1332,6 +1214,11 @@ class MentorInsightsRequest(BaseModel):
     benchmarks: Dict[str, float]
     categories: List[str] = []
 
+
+from prompts.mentor_insights import (
+    MENTOR_INSIGHTS_PROMPT,
+    MENTOR_INSIGHTS_SYSTEM_PROMPT,
+)
 @app.post("/generate_mentor_insights")
 def generate_mentor_insights(req: MentorInsightsRequest):
     """Generate mentor insights for each skill category based on scores vs benchmark"""
@@ -1343,66 +1230,24 @@ def generate_mentor_insights(req: MentorInsightsRequest):
         benchmark = req.benchmarks.get(category, 0)
         performance = "Above benchmark" if user_score >= benchmark else "Below benchmark"
 
-        prompt = f"""
-## ROLE
-You are a senior career mentor for {req.user_data.domain}.
-Generate personalized, actionable insights for this specific skill category.
-
-## USER PROFILE
-Career Goal: {req.user_data.career_goal}
-Experience Level: {req.user_data.exp_level}
-Domain: {req.user_data.domain}
-
-## SKILL ASSESSMENT
-Category: {category}
-- Your Score: {user_score:.1f}%
-- Benchmark: {benchmark}%
-- Performance: {performance}
-
-## TASK
-Generate personalized insights in this EXACT JSON format without any additional text:
-{{
-  "mentor_insight": "💬 1-sentence personalized insight",
-  "score_context": "🎯 Score context",
-  "immediate_step": "✅ 1 specific action step",
-  "weekly_focus": "📆 1 weekly focus area",
-  "career_impact": "📈 Career impact statement",
-  "encouragement": "✨ Encouraging tagline"
-}}
-
-## RULES
-- Be specific to {category} and {req.user_data.career_goal}
-- Be simple, actionable, and concise
-- Start each field with the specified emoji
-- Keep each field under 20 words
-"""
-
+        prompt = MENTOR_INSIGHTS_PROMPT.format(
+            domain=req.user_data.domain,
+            career_goal=req.user_data.career_goal,
+            exp_level=req.user_data.exp_level,
+            category=category,
+            user_score=user_score,
+            benchmark=benchmark,
+            performance=performance,
+        )
         try:
-            response = groq_client_3.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[
-                    {"role": "system", "content": "You are an expert skill assessor. Return only valid JSON responses without any additional text or formatting."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
+            prased,raw = llm_services.generate(
+                prompt = prompt,
+                system_message=MENTOR_INSIGHTS_SYSTEM_PROMPT,
+                client=3,
                 max_tokens=800,
-                top_p=1,
-                stream=False
+
             )
-
-            raw = response.choices[0].message.content.strip()
-            print(f"Raw Groq response for {category}:", raw)
-
-            clean = re.sub(r"^```json\s*|```$", "", raw, flags=re.DOTALL).strip()
-            parsed = json.loads(clean)
-
-            if not all(k in parsed for k in [
-                "mentor_insight", "score_context", "immediate_step",
-                "weekly_focus", "career_impact", "encouragement"
-            ]):
-                raise ValueError("Incomplete insight JSON")
-            
-            insights[category] = parsed
+            print(f"Raw Grpq response for {category}" ,raw)
 
         except Exception as e:
             print(f"[ERROR] Mentor insight fallback for {category}: {str(e)}")
@@ -1430,7 +1275,10 @@ class AssessmentSummaryRequest(BaseModel):
     performance_level: str = ""
     strongest_skill: str = ""
 
-
+from prompts.assessment_summary import (
+    ASSESSMENT_SUMMARY_PROMPT,
+    ASSESSMENT_SUMMARY_SYSTEM_PROMPT,
+)
 @app.post("/generate_assessment_summary")
 def generate_assessment_summary(req: AssessmentSummaryRequest):
     """Generate a 180-250 word professional assessment summary using Groq/Llama."""
@@ -1445,51 +1293,20 @@ def generate_assessment_summary(req: AssessmentSummaryRequest):
 
     student_name = req.user_profile.name or "The student"
 
-    prompt = f"""
-## ROLE
-You are a senior educational psychologist and career assessor writing the "Assessment Summary"
-section of a student's professional skill-assessment report.
 
-## USER PROFILE
-Name: {req.user_profile.name}
-Age: {req.user_profile.age}
-Education Level: {req.user_profile.education_level}
-Field of Study: {req.user_profile.field}
-Career Goal: {req.user_profile.career_goal}
-
-## ASSESSMENT RESULTS
-Overall Score: {req.overall_score:.1f}/100
-Performance Level: {req.performance_level}
-Strongest Skill: {req.strongest_skill}
-
-## SKILL CATEGORY SCORES
-{scores_block}
-
-## OPEN-ENDED RESPONSES
-{answers_block}
-
-## TASK
-Write ONE cohesive, professional assessment summary that naturally weaves in ALL of the following:
-1. Overall personality
-2. Strengths
-3. Areas for improvement
-4. Learning style
-5. Communication style
-6. Motivation
-
-## RULES
-- Length MUST be between 180 and 250 words.
-- Write in flowing paragraphs (2-4 paragraphs). Do NOT use bullet points or headers.
-- Tone: professional, evidence-based, and encouraging - never generic or overhyped.
-- Ground every statement in the scores and responses given above; do not invent facts.
-- Refer to the student as "{student_name}" once near the start, and "they/their" thereafter.
-
-## OUTPUT FORMAT
-Return ONLY valid JSON, no extra text:
-{{
-  "assessment_summary": "The full 180-250 word summary text here."
-}}
-"""
+    prompt = ASSESSMENT_SUMMARY_PROMPT.format(
+        name=req.user_profile.name,
+        age=req.user_profile.age,
+        education_level=req.user_profile.education_level,
+        field=req.user_profile.field,
+        career_goal=req.user_profile.career_goal,
+        overall_score=req.overall_score,
+        performance_level=req.performance_level,
+        strongest_skill=req.strongest_skill,
+        scores_block=scores_block,
+        answers_block=answers_block,
+        student_name=student_name,
+    )
 
     fallback = {
         "assessment_summary": (
@@ -1509,28 +1326,13 @@ Return ONLY valid JSON, no extra text:
     }
 
     try:
-        response = groq_client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert educational psychologist and career assessor. Return only valid JSON responses without any additional text or formatting."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=800,
-            top_p=1,
-            stream=False,
-            stop=None
+        json_data,raw_text = llm_services.generate(
+            prompt = prompt,
+            system_message = ASSESSMENT_SUMMARY_SYSTEM_PROMPT,
+            client = 1,
+            max_tokens = 800,
         )
-
-        raw_text = response.choices[0].message.content.strip()
-        print("Raw Groq assessment summary response:", raw_text)
-
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        json_data = json.loads(clean_text)
-
+        print("raw grpq assesment summary response:", raw_text)
         if not json_data.get("assessment_summary", "").strip():
             raise ValueError("Missing or empty 'assessment_summary' key")
 
@@ -1545,7 +1347,10 @@ class ReflectionSummaryRequest(BaseModel):
     user_profile: UserProfile
     open_ended_answers: List[OpenEndedAnswer] = []
 
-
+from prompts.reflection_summary import (
+    REFLECTION_SUMMARY_PROMPT,
+    REFLECTION_SUMMARY_SYSTEM_PROMPT,
+)
 @app.post("/generate_reflection_summary")
 def generate_reflection_summary(req: ReflectionSummaryRequest):
     """Summarize the student's open-ended reflections into themes, interests, values, aspirations and traits."""
@@ -1557,39 +1362,14 @@ def generate_reflection_summary(req: ReflectionSummaryRequest):
         [f"Q{i + 1}: {a.question}\nA{i + 1}: {a.answer}" for i, a in enumerate(req.open_ended_answers)]
     )
 
-    prompt = f"""
-## ROLE
-You are an expert career counselor skilled at reading between the lines of a student's own words.
+    prompt = REFLECTION_SUMMARY_PROMPT.format(
+        name=req.user_profile.name,
+        age=req.user_profile.age,
+        field=req.user_profile.field,
+        career_goal=req.user_profile.career_goal,
+        answers_block=answers_block,
+    )
 
-## USER PROFILE
-Name: {req.user_profile.name}
-Age: {req.user_profile.age}
-Field: {req.user_profile.field}
-Career Goal: {req.user_profile.career_goal}
-
-## STUDENT'S OPEN-ENDED RESPONSES
-{answers_block}
-
-## TASK
-Write a concise reflection summary (100-150 words) that synthesizes these responses. Do NOT quote
-or restate the answers verbatim - paraphrase and synthesize instead. Identify and describe:
-- Recurring themes across the responses
-- Interests suggested by the responses
-- Values that come through
-- Aspirations expressed or implied
-- Personality traits reflected in how the student thinks and responds
-
-## RULES
-- Write in flowing prose (1-2 short paragraphs), not bullet points or headers.
-- Speak about the student in third person.
-- Be specific and grounded in what was actually said, but always paraphrase rather than quote.
-
-## OUTPUT FORMAT
-Return ONLY valid JSON, no extra text:
-{{
-  "reflection_summary": "The full reflection summary here."
-}}
-"""
 
     fallback = {
         "reflection_summary": (
@@ -1603,27 +1383,13 @@ Return ONLY valid JSON, no extra text:
     }
 
     try:
-        response = groq_client_2.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert career counselor. Return only valid JSON responses without any additional text or formatting."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
+        json_data,raw_text = llm_services.generate(
+            prompt=prompt,
+            system_message=REFLECTION_SUMMARY_SYSTEM_PROMPT,
             max_tokens=600,
-            top_p=1,
-            stream=False,
-            stop=None
         )
 
-        raw_text = response.choices[0].message.content.strip()
         print("Raw Groq reflection summary response:", raw_text)
-
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        json_data = json.loads(clean_text)
 
         if not json_data.get("reflection_summary", "").strip():
             raise ValueError("Missing or empty 'reflection_summary' key")
@@ -1642,7 +1408,10 @@ class CareerRecommendationsRequest(BaseModel):
     strong_categories: List[str] = []
     weak_categories: List[str] = []
 
-
+from prompts.career_recommendation import(
+    CAREER_RECOMMENDATION_SYSTEM_PROMPT,
+    CAREER_RECOMMENDATION_PROMPT,
+)
 @app.post("/generate_career_recommendations")
 def generate_career_recommendations(req: CareerRecommendationsRequest):
     """Generate recommended academic streams and career domains from scores + reflection summary."""
@@ -1651,45 +1420,20 @@ def generate_career_recommendations(req: CareerRecommendationsRequest):
         [f"- {cat}: {score:.1f}/100" for cat, score in req.category_scores.items()]
     ) or "No category scores available."
 
-    prompt = f"""
-## ROLE
-You are a senior academic and career counselor advising a student on next steps.
 
-## USER PROFILE
-Name: {req.user_profile.name}
-Age: {req.user_profile.age}
-Education Level: {req.user_profile.education_level}
-Field of Study: {req.user_profile.field}
-Career Goal: {req.user_profile.career_goal}
+    prompt = CAREER_RECOMMENDATION_PROMPT.format(
+        name=req.user_profile.name,
+        age=req.user_profile.age,
+        education_level=req.user_profile.education_level,
+        field=req.user_profile.field,
+        career_goal=req.user_profile.career_goal,
+        scores_block=scores_block,
+        strong_categories=", ".join(req.strong_categories) or "None identified",
+        weak_categories=", ".join(req.weak_categories) or "None identified",
+        reflection_summary=req.reflection_summary or "Not available",
+    )
 
-## SKILL CATEGORY SCORES
-{scores_block}
-
-Strong Categories: {', '.join(req.strong_categories) or 'None identified'}
-Weak Categories: {', '.join(req.weak_categories) or 'None identified'}
-
-## REFLECTION SUMMARY
-{req.reflection_summary or 'Not available'}
-
-## TASK
-Based on the profile, scores, and reflection summary above, recommend:
-1. 1 to 3 academic streams/majors best suited to this student
-2. 2 to 4 career domains/fields best suited to this student
-
-Each recommendation must include a short, specific 1-2 sentence explanation grounded in the
-student's actual scores, strengths, or reflection themes - not generic advice.
-
-## OUTPUT FORMAT
-Return ONLY valid JSON in this exact format, no extra text:
-{{
-  "streams": [
-    {{"name": "Stream name", "explanation": "Why this stream fits, 1-2 sentences."}}
-  ],
-  "careers": [
-    {{"name": "Career domain name", "explanation": "Why this domain fits, 1-2 sentences."}}
-  ]
-}}
-"""
+    
 
     fallback = {
         "streams": [
@@ -1711,27 +1455,14 @@ Return ONLY valid JSON in this exact format, no extra text:
     }
 
     try:
-        response = groq_client_4.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a senior academic and career counselor. Return only valid JSON responses without any additional text or formatting."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
+        json_data, raw_text = llm_services.generate(
+            prompt=prompt,
+            system_message=CAREER_RECOMMENDATION_SYSTEM_PROMPT,
+            client=4,
             max_tokens=1000,
-            top_p=1,
-            stream=False,
-            stop=None
         )
 
-        raw_text = response.choices[0].message.content.strip()
         print("Raw Groq career recommendations response:", raw_text)
-
-        clean_text = re.sub(r"^```json\s*|```$", "", raw_text, flags=re.DOTALL).strip()
-        json_data = json.loads(clean_text)
 
         if "streams" not in json_data or "careers" not in json_data:
             raise ValueError("Missing 'streams' or 'careers' key")

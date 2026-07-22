@@ -27,6 +27,26 @@ const loadResultsFromStorage = () => {
   }
 };
 
+// Mirrors the full report (MCQ + open-ended + every LLM-generated section) to SQL,
+// tied to the user record created on the Home page. Called from the same effect
+// that already keeps localStorage in sync, so it stays up to date as each section loads.
+const saveResultsToDB = async (data) => {
+  try {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) return;
+    await fetch("http://127.0.0.1:8000/save_assessment_report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: parseInt(userId, 10),
+        report: data,
+      }),
+    });
+  } catch (e) {
+    console.error('Failed to save assessment report to database:', e);
+  }
+};
+
 function Results() {
    
   const location = useLocation();
@@ -185,7 +205,7 @@ console.log("openended scores:",openEndedScores);
   // refresh restores the whole report instantly instead of re-fetching
   // (and instead of showing a blank page).
   useEffect(() => {
-    saveResultsToStorage({
+    const fullReport = {
       mcqAnswers,
       openEndedResponses,
       openEndedScores,
@@ -208,7 +228,9 @@ console.log("openended scores:",openEndedScores);
       assessmentSummary,
       reflectionSummary,
       careerRecommendations
-    });
+    };
+    saveResultsToStorage(fullReport);
+    saveResultsToDB(fullReport);
   }, [tooltips, growthProjection, marketAnalysis, peerBenchmark, actionPlan, growthSources, momentumToolkit, growthOpportunities, mentorInsights, assessmentSummary, reflectionSummary, careerRecommendations]);
 
   useEffect(() => {
@@ -234,14 +256,6 @@ console.log("openended scores:",openEndedScores);
     console.log("========== RAW openEndedScores ARRAY ==========");
     console.log(openEndedScores);
   }, [categoryScores, openEndedScores]);
-  const [countdown, setCountdown] = useState(5);
-
-   useEffect(() => {
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(prev => prev - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [countdown]);
   const OQ_WEIGHTS = {
   "Subject Interest & Domain Curiosity":   { 1: 12, 2: 15, 3: 3 },
   "Cognitive & Creative Skills":           { 1: 18, 2: 8,  3: 4 },
@@ -273,11 +287,7 @@ console.log("openended scores:",openEndedScores);
       openEndedCategoryAverages[category] = weightedPercent; // already on a 0–30 scale
     });
 
-    const openEndedCategoryAverages = {};
-    Object.entries(openEndedCategoryScores).forEach(([category, scores]) => {
-      const avg = scores.reduce((a, b) => a + b, 0) / ((scores.length)*100);
-      openEndedCategoryAverages[category] = avg;
-    });
+    
     console.log("openEndedCategoryAverages",openEndedCategoryAverages)
     const totalOpenEndedScore = openEndedScores.reduce((sum, { score }) => sum + score, 0);
     const totalOpenEndedPossible = openEndedScores.length * 100;
@@ -663,7 +673,7 @@ useEffect(() => {
     };
     const startTime = performance.now();
     try {
-      const res = await fetch("https://127.0.0.1:8000/generate_peer_benchmark", {
+      const res = await fetch("http://127.0.0.1:8000/generate_peer_benchmark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -802,7 +812,7 @@ useEffect(() => {
     };
     const startTime= performance.now();
     try {
-      const res = await fetch("https://127.0.0.1:8000/generate_action_plan", {
+      const res = await fetch("http://127.0.0.1:8000/generate_action_plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -893,7 +903,7 @@ useEffect(() => {
     };
     const startTime = performance.now();
     try {
-      const res = await fetch("https://127.0.0.1:8000/generate_growth_sources", {
+      const res = await fetch("http://127.0.0.1:8000/generate_growth_sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -926,7 +936,7 @@ useEffect(() => {
     setMomentumError(null);
     const startTime= performance.now();
     try {
-      const res = await fetch("https://127.0.0.1:8000/generate_momentum_toolkit", {
+      const res = await fetch("http://127.0.0.1:8000/generate_momentum_toolkit", {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
@@ -987,7 +997,7 @@ useEffect(() => {
     };
     const startTime = performance.now();
     try {
-      const res = await fetch("https://127.0.0.1:8000/generate_growth_opportunities", {
+      const res = await fetch("http://127.0.0.1:8000/generate_growth_opportunities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -1291,7 +1301,9 @@ useEffect(() => {
     actionPlan,
     growthSources,
     momentumToolkit,
-    growthOpportunities]);
+    growthOpportunities,
+    reflectionSummary,
+    careerRecommendations]);
 
   const generateReportHTML = useCallback(() => {
   const currentDate = new Date().toLocaleDateString('en-US', {
@@ -1968,6 +1980,59 @@ useEffect(() => {
                 </div>
             </div>
 
+            <div class="section">
+                <div class="section-header">
+                    <span>🪞</span>
+                    <h2>Reflection Summary</h2>
+                </div>
+                <div class="insights-section">
+                    ${reflectionSummary
+                        ? `<div class="insight-card"><div class="insight-text"><p>${reflectionSummary}</p></div></div>`
+                        : '<p>Reflection summary not available.</p>'
+                    }
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <span>🚀</span>
+                    <h2>Recommended Career Path</h2>
+                </div>
+                <div class="insights-section">
+                    ${careerRecommendations && (careerRecommendations.streams?.length > 0 || careerRecommendations.careers?.length > 0) ? `
+                        ${careerRecommendations.streams?.length > 0 ? `
+                            <h4 style="margin-bottom: 10px; color: #667eea;">Recommended Academic Streams</h4>
+                            ${careerRecommendations.streams.map(stream => `
+                                <div class="insight-card">
+                                    <div class="insight-header">
+                                        <span>🎓</span>
+                                        <h4>${stream.name}</h4>
+                                    </div>
+                                    <div class="insight-text">
+                                        <p>${stream.explanation}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        ` : ''}
+                        ${careerRecommendations.careers?.length > 0 ? `
+                            <h4 style="margin: 20px 0 10px; color: #667eea;">Recommended Career Domains</h4>
+                            ${careerRecommendations.careers.map(career => `
+                                <div class="insight-card">
+                                    <div class="insight-header">
+                                        <span>💼</span>
+                                        <h4>${career.name}</h4>
+                                    </div>
+                                    <div class="insight-text">
+                                        <p>${career.explanation}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        ` : ''}
+                    ` : '<p>Career recommendations not available.</p>'
+                    }
+                </div>
+            </div>
+
             
 
             
@@ -1976,7 +2041,7 @@ useEffect(() => {
     </div>
 </body>
 </html>`;
-}, [percentage, strongestSkill, skillsData, percentileText, percentileNumber, salaryRangeINR, salaryRangeUSD, userInfo, totalMCQs, getPerformanceLevel, getMarketPercentile, growthProjection, peerBenchmark, actionPlan, growthSources,growthOpportunities ]);
+}, [percentage, strongestSkill, skillsData, percentileText, percentileNumber, salaryRangeINR, salaryRangeUSD, userInfo, totalMCQs, getPerformanceLevel, getMarketPercentile, growthProjection, peerBenchmark, actionPlan, growthSources, growthOpportunities, reflectionSummary, careerRecommendations ]);
 
   return (
     <div className="results-container">
@@ -2347,15 +2412,24 @@ useEffect(() => {
     🔄 Retake Assessment
   </button>
 
-  <button
-  className={`download-btn ${countdown > 0 ? "disabled" : ""}`}
-  onClick={handleDownloadReport}
-  disabled={countdown > 0}
->
-  {countdown > 0
-    ? `↓ Download Complete Report (${countdown})`
-    : "↓ Download Complete Report"}
-</button>
+  {(() => {
+    const reportSectionsPending =
+      (loadingReflectionSummary || (!reflectionSummary && !reflectionSummaryError)) ||
+      (loadingCareerRecommendations || (!careerRecommendations && !careerRecommendationsError));
+    const isDisabled = reportSectionsPending;
+    const label = reportSectionsPending
+      ? "↓ Preparing Your Full Report..."
+      : "↓ Download Complete Report";
+    return (
+      <button
+        className={`download-btn ${isDisabled ? "disabled" : ""}`}
+        onClick={handleDownloadReport}
+        disabled={isDisabled}
+      >
+        {label}
+      </button>
+    );
+  })()}
 </div>
     </div>
   );

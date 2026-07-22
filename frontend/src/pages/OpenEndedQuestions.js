@@ -33,6 +33,26 @@ const clearProgressFromStorage = () =>{
   }
 };
 
+// Mirrors in-progress open-ended answers to SQL, tied to the user record from
+// the Home page, so progress survives a cleared localStorage / different browser.
+const saveProgressToDB = async (data) => {
+  try {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) return;
+    await fetch("http://127.0.0.1:8000/save_progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: parseInt(userId, 10),
+        stage: "open_ended",
+        data,
+      }),
+    });
+  } catch (e) {
+    console.error("Failed to save open-ended progress to database:", e);
+  }
+};
+
 
 function OpenEndedQuestions() {
   const location = useLocation();
@@ -56,18 +76,20 @@ function OpenEndedQuestions() {
     await handleSubmit();
     setSubmitting(false);
   };
-  const savedProgress = !location.state ? loadProgressFromStorage() : null;
-  const carryOverSourse = location.state || savedProgress ||{};
-  const userInfo = location.state?.userInfo || {};
+  const [sessionData, setSessionData] = useState(() => {
+    if (location.state) return location.state;
+    return loadProgressFromStorage() || {};
+  });
 
   const {
+    userInfo = {},
     mcqAnswers = {},
     totalMCQs = 0,
     totalScore = 0,
     categoryScores = {},
     maxPossibleScore = 0,
     maxCategoryScores = {},
-  } = carryOverSourse;
+  } = sessionData;
 console.log("maxCategoryScores:", maxCategoryScores);
 console.log("categoryScores:", categoryScores);
   const [openEndedScores, setOpenEndedScores] = useState([]);
@@ -76,6 +98,31 @@ console.log("categoryScores:", categoryScores);
   const saved = loadProgressFromStorage();
   return saved?.responses || {};
 });
+
+  // If there's nothing to work with locally (no navigation state and no
+  // localStorage draft — e.g. localStorage was cleared and the user logged
+  // back in on this or another browser), fall back to whatever was last
+  // saved to the database for this account.
+  useEffect(() => {
+    if (location.state || loadProgressFromStorage()) return;
+
+    const userId = localStorage.getItem('user_id');
+    if (!userId) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:8000/get_progress/${userId}/open_ended`);
+        if (!res.ok) return;
+        const { data } = await res.json();
+        if (data) {
+          setSessionData(data);
+          setResponses(data.responses || {});
+        }
+      } catch (err) {
+        console.error('Failed to restore open-ended progress from the database:', err);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const hardcodedQuestions = [
@@ -109,7 +156,7 @@ console.log("categoryScores:", categoryScores);
   };
 
     useEffect(() => {
-    saveProgressToStorage({
+    const progressPayload = {
       userInfo,
       mcqAnswers,
       totalMCQs,
@@ -118,7 +165,9 @@ console.log("categoryScores:", categoryScores);
       maxPossibleScore,
       maxCategoryScores,
       responses
-    });
+    };
+    saveProgressToStorage(progressPayload);
+    saveProgressToDB(progressPayload);
   }, [responses]);
 
   async function scoreOpenEndedResponses(userProfile, questionList, responsesMap) {
@@ -174,7 +223,47 @@ console.log("categoryScores:", categoryScores);
       const scores = await scoreOpenEndedResponses(userInfo, openEndedQuestions, responses);
       console.log("open_ended_scores", scores);
       setOpenEndedScores(scores);
-      clearProgressFromStorage();
+
+      // Persist open-ended answers + scores to SQL, tied to the user record from the Home page
+      const userId = localStorage.getItem("user_id");
+      let savedToDB = false;
+      if (userId) {
+        try {
+          const saveRes = await fetch("http://127.0.0.1:8000/save_open_ended_results", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: parseInt(userId, 10),
+              answers: openEndedQuestions.map((q, idx) => ({
+                question: q.question,
+                answer: responses[`q${idx + 1}`] || "",
+              })),
+              scores,
+            }),
+          });
+          if (saveRes.ok) {
+            savedToDB = true;
+          } else {
+            const errData = await saveRes.json().catch(() => ({}));
+            console.error("Failed to save open-ended results:", errData.detail || saveRes.statusText);
+          }
+        } catch (e) {
+          console.error("Failed to save open-ended results:", e);
+        }
+      } else {
+        console.error("No user_id found in localStorage — open-ended results were not saved to the database.");
+      }
+
+      // Only wipe the in-progress backups once the final results are confirmed
+      // saved — if the save failed, keep the draft around so nothing is lost.
+      if (savedToDB) {
+        clearProgressFromStorage();
+        try {
+          await fetch(`http://127.0.0.1:8000/clear_progress/${userId}/open_ended`, { method: "DELETE" });
+        } catch (e) {
+          console.error("Failed to clear saved open-ended progress from the database:", e);
+        }
+      }
 
       navigate('/results', {
         state: {

@@ -5,11 +5,15 @@ import Assessment from './pages/Assessment';
 import MCQCompletion from './pages/MCQCompletion';
 import OpenEndedQuestions from './pages/OpenEndedQuestions';
 import Results from './pages/Results';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
 
 function App() { 
   return (
     <Router>
       <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         <Route path="/" element={<Home />} />
         <Route path="/assessment" element={<Assessment />} />
         <Route path="/mcq-completion" element={<MCQCompletion />} />
