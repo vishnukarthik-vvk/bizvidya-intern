@@ -53,7 +53,7 @@ function Home() {
 
     (async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/users/${userId}`);
+        const res = await fetch(`https://bizvidya-intern.onrender.com/users/${userId}`);
 
         if (res.status === 404) {
           // This user_id no longer exists in the database (e.g. the table was
@@ -152,7 +152,7 @@ try {
     return;
   }
 
-  const response = await fetch(`http://127.0.0.1:8000/users/${userId}`, {
+  const response = await fetch(`https://bizvidya-intern.onrender.com/users/${userId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",

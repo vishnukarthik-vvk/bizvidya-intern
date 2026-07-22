@@ -38,7 +38,7 @@ const saveProgressToDB = async (data) => {
   try {
     const userId = localStorage.getItem("user_id");
     if (!userId) return;
-    await fetch("http://127.0.0.1:8000/save_progress", {
+    await fetch("https://bizvidya-intern.onrender.com/save_progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -208,7 +208,7 @@ if (!hasRestoredState && !loading && questions.length > 0 ) {
       const userId = localStorage.getItem('user_id');
       if (userId) {
         try {
-          const res = await fetch(`http://127.0.0.1:8000/get_progress/${userId}/mcq`);
+          const res = await fetch(`https://bizvidya-intern.onrender.com/get_progress/${userId}/mcq`);
           if (res.ok) {
             const { data } = await res.json();
             if (data && data.answers && Object.keys(data.answers).length > 0) {
@@ -338,7 +338,7 @@ if (question.category) {
   let savedToDB = false;
   if (userId) {
     try {
-      const res = await fetch("http://127.0.0.1:8000/save_mcq_results", {
+      const res = await fetch("https://bizvidya-intern.onrender.com/save_mcq_results", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -368,7 +368,7 @@ if (question.category) {
   if (savedToDB) {
     clearProgressFromStorage();
     try {
-      await fetch(`http://127.0.0.1:8000/clear_progress/${userId}/mcq`, { method: "DELETE" });
+      await fetch(`https://bizvidya-intern.onrender.com/clear_progress/${userId}/mcq`, { method: "DELETE" });
     } catch (e) {
       console.error("Failed to clear saved MCQ progress from the database:", e);
     }

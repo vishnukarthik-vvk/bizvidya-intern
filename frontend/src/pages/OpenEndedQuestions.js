@@ -39,7 +39,7 @@ const saveProgressToDB = async (data) => {
   try {
     const userId = localStorage.getItem("user_id");
     if (!userId) return;
-    await fetch("http://127.0.0.1:8000/save_progress", {
+    await fetch("https://bizvidya-intern.onrender.com/save_progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -111,7 +111,7 @@ console.log("categoryScores:", categoryScores);
 
     (async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/get_progress/${userId}/open_ended`);
+        const res = await fetch(`https://bizvidya-intern.onrender.com/get_progress/${userId}/open_ended`);
         if (!res.ok) return;
         const { data } = await res.json();
         if (data) {
@@ -195,7 +195,7 @@ console.log("categoryScores:", categoryScores);
     };
 
     const startTime = performance.now();
-    const API_BASE = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
+    const API_BASE = process.env.REACT_APP_API_URL || 'http://1https://bizvidya-intern.onrender.com27.0.0.1:8000';
     const response = await fetch(`${API_BASE}/score_open_ended_responses`, {
 
       method: 'POST',
@@ -229,7 +229,7 @@ console.log("categoryScores:", categoryScores);
       let savedToDB = false;
       if (userId) {
         try {
-          const saveRes = await fetch("http://127.0.0.1:8000/save_open_ended_results", {
+          const saveRes = await fetch("http:/https://bizvidya-intern.onrender.com/save_open_ended_results", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -259,7 +259,7 @@ console.log("categoryScores:", categoryScores);
       if (savedToDB) {
         clearProgressFromStorage();
         try {
-          await fetch(`http://127.0.0.1:8000/clear_progress/${userId}/open_ended`, { method: "DELETE" });
+          await fetch(`https://bizvidya-intern.onrender.com/clear_progress/${userId}/open_ended`, { method: "DELETE" });
         } catch (e) {
           console.error("Failed to clear saved open-ended progress from the database:", e);
         }
