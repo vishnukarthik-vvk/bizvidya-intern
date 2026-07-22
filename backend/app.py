@@ -25,15 +25,17 @@ load_dotenv()
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
-origins = [  
+origins = [
+    "https://bizvidya-frontend.onrender.com",
     "https://skill-assessment-1.onrender.com",
-    "http://localhost",
     "https://skill-assessment-n1dm.onrender.com",
+
+    # Local development
+    "http://localhost",
     "http://localhost:3000",
     "http://127.0.0.1",
-    "http://127.0.0.1:3000"
+    "http://127.0.0.1:3000",
 ]
-
 
 app.add_middleware(
     CORSMiddleware,
