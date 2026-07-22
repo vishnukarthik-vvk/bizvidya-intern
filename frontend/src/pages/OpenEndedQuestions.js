@@ -62,12 +62,12 @@ function OpenEndedQuestions() {
   const handleSubmitClick = async () => {
     if (submitting) return;
 
-    // Check minimum 100 words for each question
+    // Check minimum 10 words for each question
     for (let i = 0; i < openEndedQuestions.length; i++) {
       const answer = responses[`q${i + 1}`] || '';
       const wordCount = answer.trim().split(/\s+/).filter(Boolean).length;
-      if (wordCount < 100) {
-        alert(`Question ${i + 1} requires at least 100 words. You have written ${wordCount} words.`);
+      if (wordCount < 10) {
+        alert(`Question ${i + 1} requires at least 10 words. You have written ${wordCount} words.`);
         return;
       }
     }
@@ -301,7 +301,7 @@ console.log("categoryScores:", categoryScores);
             name={`q${index + 1}`}
             value={responses[`q${index + 1}`] || ''}
             onChange={handleChange}
-            placeholder="Share your thoughts here... (minimum 100 words required)"
+            placeholder="Share your thoughts here... (minimum 10 words required)"
           />
         </div>
       ))}
