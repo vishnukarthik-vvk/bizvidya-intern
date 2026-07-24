@@ -47,3 +47,13 @@ class ProgressSave(BaseModel):
     user_id: int
     stage: str
     data: Dict[str, Any]
+
+class GoogleAuthRequest(BaseModel):
+    token: str
+
+class OTPVerifyRequest(BaseModel):
+    email: str
+    otp: str
+
+class ResendOTPRequest(BaseModel):
+    email: str

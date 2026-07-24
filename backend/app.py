@@ -16,10 +16,15 @@ import random
 from groq import Groq
 import requests
 from database import engine,Base,get_db
-from models.models import User, MCQResult, OpenEndedResult, AssessmentReport, AssessmentProgress
+from models.models import User, MCQResult, OpenEndedResult, AssessmentReport, AssessmentProgress,EmailOTP
 from sqlalchemy.orm import Session
 from fastapi import Depends
+from datetime import datetime, timedelta
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 from schemas import UserCreate, MCQResultCreate, OpenEndedResultCreate, AssessmentReportSave, SignupRequest, LoginRequest, ProgressSave
+from schemas import UserCreate, MCQResultCreate, OpenEndedResultCreate, AssessmentReportSave, SignupRequest, LoginRequest, GoogleAuthRequest, OTPVerifyRequest, ResendOTPRequest
+from Auth import hash_password , verify_password, generate_otp, send_otp_email
 load_dotenv() 
 
 Base.metadata.create_all(bind=engine)
@@ -127,17 +132,31 @@ def signup(payload: SignupRequest , db: Session = Depends(get_db)):
     db_user = User(
         email = email,
         hashed_password = hash_password(payload.password),
+        auth_provider = "local",
+        is_verified = False,
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
 
+    otp = generate_otp()
+    db.add(EmailOTP(
+        email=email,
+        otp_code=otp,
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+    ))
+    db.commit()
+
+    try:
+        send_otp_email(email, otp)
+    except Exception as e:
+        print(f"Failed to send OTP email: {e}")
+
     return{
-        "message":"account created sucessfully",
+        "message":"account created — check your email for a verification code",
         "user_id": db_user.id,
         "email" : db_user.email
     }
-
 @app.post("/save_progress")
 def save_progress(payload: ProgressSave, db: Session = Depends(get_db)):
     existing = db.query(AssessmentProgress).filter(
@@ -253,19 +272,25 @@ def update_user(user_id: int, user: UserCreate, db: Session = Depends(get_db)):
     return {"message": "user updated successfully", "user_id": db_user.id}
 
 
-@app.post("/login")
+
 
 @app.post("/login")
 def login(payload:LoginRequest , db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
     db_user = db.query(User).filter(User.email == email).first()
 
-    if not db_user or not verify_password(payload.password , db_user.hashed_password):
+    if not db_user or db_user.auth_provider != "local" or not verify_password(payload.password , db_user.hashed_password):
         raise HTTPException(
             status_code = 400,
             detail = "Invalid email or password",
         )
-    
+
+    if not db_user.is_verified:
+        raise HTTPException(
+            status_code = 403,
+            detail = "please verify your email before logging in",
+        )
+
     return {
         "message" : "Login sucessful",
         "user_id" : db_user.id,

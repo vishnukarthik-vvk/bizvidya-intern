@@ -1,21 +1,26 @@
-from sqlalchemy import Column , Integer , String, Text, Float, ForeignKey, UniqueConstraint
+from sqlalchemy import Column , Integer , String, Text, Float, ForeignKey, Boolean, DateTime
+from datetime import datetime
 from database import Base
 
 class User(Base):
     __tablename__  = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    email = Column(String, unique = True , index = True , nullable = False)
+    hashed_password = Column(String, nullable = True)   # Google users have no password
+    auth_provider = Column(String, default="local")     # "local" or "google"
+    google_id = Column(String, unique=True, nullable=True, index=True)
+    is_verified = Column(Boolean, default=False)
     fullName = Column(String)
-    age = Column(Integer)
-    educationLevel = Column(String)
-    work_experience = Column(String)
-    current_role = Column(String)
-    professional_domain = Column(String)
-    career_goal = Column(String)
-    hobbies = Column(String)
-    preferred_language = Column(String)
+
+class EmailOTP(Base):
+    __tablename__ = "email_otps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True, nullable=False)
+    otp_code = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class MCQResult(Base):

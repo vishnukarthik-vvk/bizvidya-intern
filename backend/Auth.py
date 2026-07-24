@@ -1,6 +1,27 @@
 import hashlib
 import secrets
- 
+import random
+import smtplib
+from email.mime.text import MIMEText
+
+
+def generate_otp() -> str:
+    return f"{random.randint(0, 999999):06d}"
+
+
+def send_otp_email(to_email: str, otp: str) -> None:
+    sender = os.getenv("EMAIL_USER")
+    app_password = os.getenv("EMAIL_APP_PASSWORD")
+
+    msg = MIMEText(f"Your verification code is: {otp}\n\nThis code expires in 10 minutes.")
+    msg["Subject"] = "Verify your email"
+    msg["From"] = sender
+    msg["To"] = to_email
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender, app_password)
+        server.sendmail(sender, to_email, msg.as_string())
  
 def hash_password(password: str) -> str:
     """

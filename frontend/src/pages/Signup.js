@@ -1,6 +1,7 @@
 import React , { useState } from "react";
 import { useNavigate,Link } from 'react-router-dom';
 import './Auth.css';
+import { GoogleLogin } from '@react-oauth/google';
 
 function Signup(){
     const [email, setEmail] = useState('');
@@ -39,16 +40,31 @@ function Signup(){
 
             }
 
-            localStorage.setItem('user_id', data.user_id);
-            localStorage.setItem('user_email', data.email);
-
-            navigate('/')
+            navigate('/verify-otp', { state: { email } });
         } catch (err) {
             console.error(err);
             setError(err.message || 'Something went wrong. Please try again.');
 
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleGoogleSuccess = async (credentialResponse) => {
+        setError('');
+        try {
+            const response = await fetch('http://127.0.0.1:8000/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: credentialResponse.credential }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Google sign-in failed');
+            localStorage.setItem('user_id', data.user_id);
+            localStorage.setItem('user_email', data.email);
+            navigate('/');
+        } catch (err) {
+            setError(err.message || 'Google sign-in failed');
         }
     };
 
@@ -111,6 +127,10 @@ function Signup(){
         <p className="auth-switch">
           Already have an account? <Link to="/login">Log in</Link>
         </p>
+
+        <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+          <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => setError('Google sign-in failed')} />
+        </div>
       </div>
     </div>
   );
