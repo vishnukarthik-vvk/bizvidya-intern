@@ -45,7 +45,7 @@ function Login(){
     const handleGoogleSuccess = async (credentialResponse) => {
         setError('');
         try {
-            const response = await fetch('bizvidya-intern.onrender.com/auth/google', {
+            const response = await fetch('htpps://bizvidya-intern.onrender.com/auth/google', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token: credentialResponse.credential }),
