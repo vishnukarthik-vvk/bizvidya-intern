@@ -2,16 +2,26 @@ from sqlalchemy import Column , Integer , String, Text, Float, ForeignKey, Boole
 from datetime import datetime
 from database import Base
 
+
 class User(Base):
-    __tablename__  = "users"
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique = True , index = True , nullable = False)
-    hashed_password = Column(String, nullable = True)   # Google users have no password
-    auth_provider = Column(String, default="local")     # "local" or "google"
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=True)
+    auth_provider = Column(String, default="local")
     google_id = Column(String, unique=True, nullable=True, index=True)
     is_verified = Column(Boolean, default=False)
     fullName = Column(String)
+    age = Column(Integer, nullable=True)
+    educationLevel = Column(String, nullable=True)
+    work_experience = Column(String, nullable=True)
+    current_role = Column(String, nullable=True)
+    professional_domain = Column(String, nullable=True)
+    career_goal = Column(String, nullable=True)
+    hobbies = Column(String, nullable=True)
+    preferred_language = Column(String, nullable=True)
+
 
 class EmailOTP(Base):
     __tablename__ = "email_otps"
