@@ -15,8 +15,8 @@ function VerifyOtp() {
         e.preventDefault();
         setError('');
         setSubmitting(true);
-        try {
-            const response = await fetch('http://127.0.0.1:8000/verify-otp', {
+        try {const response = await fetch('https://bizvidya-intern.onrender.com/verify-otp', {
+            
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, otp }),
@@ -38,7 +38,7 @@ function VerifyOtp() {
         setError('');
         setResending(true);
         try {
-            const response = await fetch('http://127.0.0.1:8000/resend-otp', {
+            const response = await fetch('https://bizvidya-intern.onrender.com/resend-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email }),

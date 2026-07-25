@@ -279,7 +279,13 @@ def login(payload:LoginRequest , db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
     db_user = db.query(User).filter(User.email == email).first()
 
-    if not db_user or db_user.auth_provider != "local" or not verify_password(payload.password , db_user.hashed_password):
+    if db_user and db_user.auth_provider == "google":
+        raise HTTPException(
+            status_code = 400,
+            detail = "this account uses Google sign-in — please use the 'Sign in with Google' button instead",
+        )
+
+    if not db_user or not verify_password(payload.password , db_user.hashed_password):
         raise HTTPException(
             status_code = 400,
             detail = "Invalid email or password",
@@ -297,7 +303,91 @@ def login(payload:LoginRequest , db: Session = Depends(get_db)):
         "email": db_user.email,
         "fullName" : db_user.fullName,
     }
+@app.post("/verify-otp")
+def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    db_otp = (
+        db.query(EmailOTP)
+        .filter(EmailOTP.email == email)
+        .order_by(EmailOTP.id.desc())
+        .first()
+    )
+    if not db_otp or db_otp.otp_code != payload.otp:
+        raise HTTPException(status_code=400, detail="invalid verification code")
+    if db_otp.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="verification code expired, request a new one")
 
+    db_user = db.query(User).filter(User.email == email).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    db_user.is_verified = True
+    db.commit()
+
+    return {"message": "email verified successfully", "user_id": db_user.id, "email": db_user.email}
+
+
+@app.post("/resend-otp")
+def resend_otp(payload: ResendOTPRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    db_user = db.query(User).filter(User.email == email).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="user not found")
+    if db_user.is_verified:
+        raise HTTPException(status_code=400, detail="email already verified")
+
+    otp = generate_otp()
+    db.add(EmailOTP(
+        email=email,
+        otp_code=otp,
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+    ))
+    db.commit()
+
+    try:
+        send_otp_email(email, otp)
+    except Exception as e:
+        print(f"Failed to send OTP email: {e}")
+
+    return {"message": "a new verification code has been sent"}
+
+
+@app.post("/auth/google")
+def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            payload.token, google_requests.Request(), os.getenv("GOOGLE_CLIENT_ID")
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid Google token")
+
+    email = idinfo["email"].strip().lower()
+    db_user = db.query(User).filter(User.email == email).first()
+
+    if not db_user:
+        db_user = User(
+            email=email,
+            hashed_password=None,
+            auth_provider="google",
+            google_id=idinfo["sub"],
+            is_verified=True,
+            fullName=idinfo.get("name", ""),
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+    elif db_user.auth_provider != "google":
+        raise HTTPException(
+            status_code=400,
+            detail="an account with this email already exists — log in with your password instead",
+        )
+
+    return {
+        "message": "Login successful",
+        "user_id": db_user.id,
+        "email": db_user.email,
+        "fullName": db_user.fullName,
+    }
 
 @app.post("/save_mcq_results")
 def save_mcq_results(payload: MCQResultCreate, db: Session = Depends(get_db)):
