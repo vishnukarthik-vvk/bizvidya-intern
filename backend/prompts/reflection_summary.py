@@ -27,7 +27,7 @@ or restate the answers verbatim - paraphrase and synthesize instead. Identify an
 
 ## RULES
 - Write in flowing prose (1-2 short paragraphs), not bullet points or headers.
-- Speak about the student in third person.
+- Speak directly to the student using "you" and "your" — do not refer to them in third person or by name.
 - Be specific and grounded in what was actually said, but always paraphrase rather than quote.
 
 ## OUTPUT FORMAT

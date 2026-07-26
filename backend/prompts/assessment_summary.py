@@ -40,7 +40,7 @@ Write ONE cohesive, professional assessment summary that naturally weaves in ALL
 - Write in flowing paragraphs (2-4 paragraphs). Do NOT use bullet points or headers.
 - Tone: professional, evidence-based, and encouraging.
 - Ground every statement in the scores and responses given above.
-- Refer to the student as "{student_name}" once near the start, and "they/their" thereafter.
+- Address the student directly throughout using "you" and "your" — do not refer to them in third person or by name.
 
 ## OUTPUT FORMAT
 Return ONLY valid JSON:

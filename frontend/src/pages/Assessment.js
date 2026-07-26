@@ -437,12 +437,14 @@ setCategoryProgress(newProgress);
         setSelectedAnswer(answers[nextCategoryQuestions[0]?.id] || '');
       } else {
         
-        const categories = Object.values(categoryProgress);
+        const categoriesProgress = Object.values(categoryProgress);
         let answered = 0;
-        for(const cat of categories){
-          answered = answered + cat.answered
+        let total = 0;
+        for(const cat of categoriesProgress){
+          answered = answered + cat.answered;
+          total = total + cat.total;
         }
-        if (answered===48){  
+        if (answered === total && total > 0){  
 
         handleMCQCompletion();}
         else{

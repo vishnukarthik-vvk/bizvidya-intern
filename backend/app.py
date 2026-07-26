@@ -1427,9 +1427,9 @@ def generate_assessment_summary(req: AssessmentSummaryRequest):
 
     fallback = {
         "assessment_summary": (
-            f"{student_name} demonstrates a {req.performance_level.lower() if req.performance_level else 'developing'} "
+            f"You demonstrate a {req.performance_level.lower() if req.performance_level else 'developing'} "
             f"overall performance in this assessment, with particular strength in {req.strongest_skill or 'multiple areas'}. "
-            "Their responses reflect a thoughtful, curious personality with genuine interest in learning and "
+            "Your responses reflect a thoughtful, curious personality with genuine interest in learning and "
             "self-improvement. They show solid analytical and problem-solving ability alongside a collaborative "
             "approach to challenges, and they engage sincerely with open-ended questions rather than giving "
             "surface-level answers. Areas for growth include building greater consistency across skill categories "
@@ -1490,10 +1490,10 @@ def generate_reflection_summary(req: ReflectionSummaryRequest):
 
     fallback = {
         "reflection_summary": (
-            "Across their responses, the student shows consistent curiosity about how things work and a "
+            "Across your responses, you show consistent curiosity about how things work and a "
             "preference for hands-on problem-solving over purely theoretical thinking. Recurring themes "
             "include a value for honesty, teamwork, and personal growth, alongside a quiet ambition to build "
-            "a meaningful, purpose-driven career. Their tone suggests a reflective, empathetic personality "
+            "a meaningful, purpose-driven career. Your tone suggests a reflective, empathetic personality "
             "that stays thoughtful under pressure and remains genuinely open to learning from experience "
             "and feedback from others."
         )

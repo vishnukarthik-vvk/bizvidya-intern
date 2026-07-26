@@ -7,6 +7,39 @@ import { MdOutlineWorkOutline, MdFamilyRestroom, MdOutlineSchool, MdOutlineCompu
 import { GiHealthPotion, GiScales } from "react-icons/gi";
 import { BsLightbulb, BsGraphUp } from "react-icons/bs";
 
+const EDUCATION_LABELS = {
+  highSchool: "High School",
+  undergraduate: "Undergraduate",
+  bachelor: "Bachelor's Degree",
+  master: "Master's Degree",
+  phd: "PhD",
+};
+
+const EXPERIENCE_LABELS = {
+  noExperience: "No Experience",
+  entryLevel: "Entry Level (0-2 years)",
+  midLevel: "Mid Level (3-5 years)",
+  seniorLevel: "Senior Level (5+ years)",
+};
+
+const DOMAIN_LABELS = {
+  dataScience: "Data Science",
+  finance: "Finance",
+  uxDesign: "UX Design",
+  marketing: "Marketing",
+  softwareEngineering: "Software Engineering",
+};
+
+const CAREER_GOAL_LABELS = {
+  productManager: "Become a Product Manager",
+  dataAnalyst: "Become a Data Analyst",
+  teamLead: "Become a Team Lead",
+  entrepreneur: "Start My Own Business",
+  researcher: "Pursue Research",
+};
+
+const toLabel = (map, value) => (value ? (map[value] || value) : null);
+
 const RESULTS_STORAGE_KEY = 'assessmentResultsData';
 
 const saveResultsToStorage = (data) => {
@@ -1707,19 +1740,19 @@ useEffect(() => {
                         </div>
                         <div class="overview-item">
                             <span class="overview-label">Education:</span>
-                            <span class="overview-value">${userInfo?.educationLevel || 'N/A'}</span>
+                            <span class="overview-value">${toLabel(EDUCATION_LABELS, userInfo?.educationLevel) || 'N/A'}</span>
                         </div>
                         <div class="overview-item">
                             <span class="overview-label">Experience:</span>
-                            <span class="overview-value">${userInfo?.workExperience || 'N/A'} years</span>
+                            <span class="overview-value">${toLabel(EXPERIENCE_LABELS, userInfo?.workExperience) || 'N/A'}</span>
                         </div>
                         <div class="overview-item">
                             <span class="overview-label">Professional Domain:</span>
-                            <span class="overview-value">${userInfo?.professionalDomain || 'N/A'}</span>
+                            <span class="overview-value">${toLabel(DOMAIN_LABELS, userInfo?.professionalDomain) || 'N/A'}</span>
                         </div>
                         <div class="overview-item">
                             <span class="overview-label">Career Goals:</span>
-                            <span class="overview-value">${userInfo?.careerGoals || 'N/A'}</span>
+                            <span class="overview-value">${toLabel(CAREER_GOAL_LABELS, userInfo?.careerGoals) || 'N/A'}</span>
                         </div>
                     </div>
                     <div>
