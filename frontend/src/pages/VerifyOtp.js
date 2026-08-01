@@ -6,13 +6,12 @@ function VerifyOtp() {
     const location = useLocation();
     const navigate = useNavigate();
     const [email] = useState(location.state?.email || '');
-const [error, setError] = useState(
-    location.state?.emailSent === false
-        ? "We couldn't send your verification email. Tap 'Resend code' below to try again."
-        : ''
-);
+    const [error, setError] = useState(
+        location.state?.emailSent === false
+            ? "We couldn't send your verification email. Tap 'Resend code' below to try again."
+            : ''
+    );
     const [otp, setOtp] = useState('');
-    const [error, setError] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [resending, setResending] = useState(false);
 
