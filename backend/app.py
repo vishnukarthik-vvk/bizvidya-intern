@@ -29,6 +29,16 @@ load_dotenv()
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"[UNHANDLED EXCEPTION] {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "internal server error, please try again"},
+    )
 
 origins = [
     "https://bizvidya-frontend.onrender.com",
