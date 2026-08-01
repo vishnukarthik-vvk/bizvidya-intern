@@ -67,7 +67,7 @@ const saveResultsToDB = async (data) => {
   try {
     const userId = localStorage.getItem("user_id");
     if (!userId) return;
-    await fetch("https://bizvidya-intern.onrender.com/save_assessment_report", {
+    await fetch("http://localhost:8000/save_assessment_report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -396,7 +396,7 @@ console.log("openended scores:",openEndedScores);
      const startTime = performance.now();
 
     try {
-      const response = await fetch("https://bizvidya-intern.onrender.com/generate_tooltips", {
+      const response = await fetch("http://localhost:8000/generate_tooltips", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -706,7 +706,7 @@ useEffect(() => {
     };
     const startTime = performance.now();
     try {
-      const res = await fetch("https://bizvidya-intern.onrender.com/generate_peer_benchmark", {
+      const res = await fetch("http://localhost:8000/generate_peer_benchmark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -845,7 +845,7 @@ useEffect(() => {
     };
     const startTime= performance.now();
     try {
-      const res = await fetch("https://bizvidya-intern.onrender.com/generate_action_plan", {
+      const res = await fetch("http://localhost:8000/generate_action_plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -936,7 +936,7 @@ useEffect(() => {
     };
     const startTime = performance.now();
     try {
-      const res = await fetch("https://bizvidya-intern.onrender.com/generate_growth_sources", {
+      const res = await fetch("http://localhost:8000/generate_growth_sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -969,7 +969,7 @@ useEffect(() => {
     setMomentumError(null);
     const startTime= performance.now();
     try {
-      const res = await fetch("https://bizvidya-intern.onrender.com/generate_momentum_toolkit", {
+      const res = await fetch("http://localhost:8000/generate_momentum_toolkit", {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
@@ -1030,7 +1030,7 @@ useEffect(() => {
     };
     const startTime = performance.now();
     try {
-      const res = await fetch("https://bizvidya-intern.onrender.com/generate_growth_opportunities", {
+      const res = await fetch("http://localhost:8000/generate_growth_opportunities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -1182,7 +1182,7 @@ useEffect(() => {
 
       const startTime = performance.now();
       try {
-        const res = await fetch("https://bizvidya-intern.onrender.com/generate_assessment_summary", {
+        const res = await fetch("http://localhost:8000/generate_assessment_summary", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -1230,7 +1230,7 @@ useEffect(() => {
 
       const startTime = performance.now();
       try {
-        const res = await fetch("https://bizvidya-intern.onrender.com/generate_reflection_summary", {
+        const res = await fetch("http://localhost:8000/generate_reflection_summary", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -1286,7 +1286,7 @@ useEffect(() => {
 
       const startTime = performance.now();
       try {
-        const res = await fetch("https://bizvidya-intern.onrender.com/generate_career_recommendations", {
+        const res = await fetch("http://localhost:8000/generate_career_recommendations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
