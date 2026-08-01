@@ -4,24 +4,32 @@ import random
 import smtplib
 from email.mime.text import MIMEText
 import os
+import requests
+
 
 def generate_otp() -> str:
     return f"{random.randint(0, 999999):06d}"
 
 
 def send_otp_email(to_email: str, otp: str) -> None:
-    sender = os.getenv("EMAIL_USER")
-    app_password = os.getenv("EMAIL_APP_PASSWORD")
+    from_address = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
-    msg = MIMEText(f"Your verification code is: {otp}\n\nThis code expires in 10 minutes.")
-    msg["Subject"] = "Verify your email"
-    msg["From"] = sender
-    msg["To"] = to_email
-
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(sender, app_password)
-        server.sendmail(sender, to_email, msg.as_string())
+    response = requests.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {os.getenv('RESEND_API_KEY')}"},
+        json={
+            "from": from_address,
+            "to": [to_email],
+            "subject": "Verify your email",
+            "text": f"Your verification code is: {otp}\n\nThis code expires in 10 minutes.",
+        },
+        timeout=10,
+    )
+    if not response.ok:
+        # surface Resend's actual error instead of a generic 403 traceback
+        raise RuntimeError(
+            f"Resend API error {response.status_code}: {response.text}"
+        )
  
 def hash_password(password: str) -> str:
     """

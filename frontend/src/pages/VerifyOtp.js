@@ -6,6 +6,11 @@ function VerifyOtp() {
     const location = useLocation();
     const navigate = useNavigate();
     const [email] = useState(location.state?.email || '');
+const [error, setError] = useState(
+    location.state?.emailSent === false
+        ? "We couldn't send your verification email. Tap 'Resend code' below to try again."
+        : ''
+);
     const [otp, setOtp] = useState('');
     const [error, setError] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -15,7 +20,7 @@ function VerifyOtp() {
         e.preventDefault();
         setError('');
         setSubmitting(true);
-        try {const response = await fetch('http://localhost:8000/verify-otp', {
+        try {const response = await fetch('https://bizvidya-intern.onrender.com/verify-otp', {
             
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -38,7 +43,7 @@ function VerifyOtp() {
         setError('');
         setResending(true);
         try {
-            const response = await fetch('http://localhost:8000/resend-otp', {
+            const response = await fetch('https://bizvidya-intern.onrender.com/resend-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email }),

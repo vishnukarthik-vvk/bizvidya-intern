@@ -27,7 +27,7 @@ function Signup(){
 
         setSubmitting(true);
         try {
-            const response = await fetch('http://localhost:8000/signup',{
+            const response = await fetch('https://bizvidya-intern.onrender.com/signup',{
                 method : 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body : JSON.stringify({email, password}),
@@ -40,7 +40,7 @@ function Signup(){
 
             }
 
-            navigate('/verify-otp', { state: { email } });
+            navigate('/verify-otp', { state: { email, emailSent: data.email_sent } });
         } catch (err) {
             console.error(err);
             setError(err.message || 'Something went wrong. Please try again.');
@@ -53,7 +53,7 @@ function Signup(){
     const handleGoogleSuccess = async (credentialResponse) => {
         setError('');
         try {
-            const response = await fetch('http://localhost:8000/auth/google', {
+            const response = await fetch('https://bizvidya-intern.onrender.com/auth/google', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token: credentialResponse.credential }),

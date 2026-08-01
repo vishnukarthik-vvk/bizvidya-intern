@@ -147,15 +147,22 @@ def signup(payload: SignupRequest , db: Session = Depends(get_db)):
     ))
     db.commit()
 
+    email_sent = True
     try:
         send_otp_email(email, otp)
     except Exception as e:
-        print(f"Failed to send OTP email: {e}")
+        email_sent = False
+        print(f"[OTP EMAIL FAILED] user_id={db_user.id} email={email} error={e}")
 
-    return{
-        "message":"account created — check your email for a verification code",
+    return {
+        "message": (
+            "account created — check your email for a verification code"
+            if email_sent
+            else "account created, but we couldn't send the verification email. Tap 'Resend code' to try again."
+        ),
         "user_id": db_user.id,
-        "email" : db_user.email
+        "email": db_user.email,
+        "email_sent": email_sent,
     }
 @app.post("/save_progress")
 def save_progress(payload: ProgressSave, db: Session = Depends(get_db)):
@@ -347,10 +354,13 @@ def resend_otp(payload: ResendOTPRequest, db: Session = Depends(get_db)):
     try:
         send_otp_email(email, otp)
     except Exception as e:
-        print(f"Failed to send OTP email: {e}")
+        print(f"[OTP EMAIL FAILED] email={email} error={e}")
+        raise HTTPException(
+            status_code=502,
+            detail="couldn't send the verification email right now, please try again in a moment",
+        )
 
     return {"message": "a new verification code has been sent"}
-
 
 @app.post("/auth/google")
 def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
