@@ -1,97 +1,65 @@
+// src/pages/Assessment.js
+// Place this file at: src/pages/Assessment.js
+//
+// Bug fixes applied:
+//   B1  – replaced every hardcoded localhost URL with api.js calls
+//   B2  – last question can now be submitted (read newProgress, not stale state)
+//   B5  – database writes debounced (was once per second for 20 min)
+//   B12 – setSelectedAnswer reads newAnswers not old answers map
+//   B13 – categoryProgress updates clone nested objects instead of mutating
+//   B14 – assessmentComplete is actually set to true so the timer can't re-fire
+//   B15 – removed answersRef (was written but never read)
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Assessment.css';
 import Papa from 'papaparse';
- 
-const STORAGE_KEY = "skillAssessmentProgress";
+import { post, get, del, debounce } from '../api';
 
-const saveProgressToStorage = (data) =>{
-  try{
-    localStorage.setItem(STORAGE_KEY ,JSON.stringify(data));
-  } catch (e) {
-      console.error("failed to save assessment progress",e);
-  }
+const STORAGE_KEY = 'skillAssessmentProgress';
 
+const saveProgressToStorage = data => {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+};
+const loadProgressFromStorage = () => {
+  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
+};
+const clearProgressFromStorage = () => {
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
 };
 
-const loadProgressFromStorage = () =>{
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e){
-    console.error("failed to load saved assessment progress", e);
-    return null;
-  }
-};
-
-const clearProgressFromStorage = () =>{
-  try{
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (e) {
-    console.error("failed to clear saved progress",e);
-  }
-};
-
-// Mirrors in-progress MCQ state to SQL, tied to the user record from the Home
-// page, so progress survives a cleared localStorage / different browser.
-const saveProgressToDB = async (data) => {
+// B5: debounced – fires at most once every 3 s instead of once per second.
+const saveProgressToDB = debounce(async (data) => {
   try {
-    const userId = localStorage.getItem("user_id");
+    const userId = localStorage.getItem('user_id');
     if (!userId) return;
-    await fetch("https://bizvidya-intern.onrender.com/save_progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: parseInt(userId, 10),
-        stage: "mcq",
-        data,
-      }),
-    });
+    await post('/save_progress', { user_id: parseInt(userId, 10), stage: 'mcq', data });
   } catch (e) {
-    console.error("Failed to save MCQ progress to database:", e);
+    console.error('Failed to save MCQ progress to database:', e);
   }
-};
+}, 3000);
 
-const loadQuestions = async ({
-  setQuestions,
-  setCategories,
-  setCategoryProgress,
-  setCurrentCategory,
-  setLoading,
-  setError
-}) => {  
-              
+const loadQuestions = async ({ setQuestions, setCategories, setCategoryProgress, setCurrentCategory, setLoading, setError }) => {
   try {
     const response = await fetch('/mcq_questions.csv');
     if (!response.ok) throw new Error('Failed to load questions');
     const csvText = await response.text();
-    const parsedData = Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-    });
+    const parsedData = Papa.parse(csvText, { header: true, skipEmptyLines: true });
 
-    const parsedQuestions = parsedData.data.map((row) => ({
-      id: row['ID']?.trim(),
-      //pillar: row['Pillar']?.trim(),
-      //subDomain: row['Sub-domain']?.trim(),
-      category: row['category']?.trim(),
-      //difficulty: row['Difficulty']?.trim(),
+    const parsedQuestions = parsedData.data.map(row => ({
+      id:           row['ID']?.trim(),
+      category:     row['category']?.trim(),
       questionText: row['Question Text']?.trim(),
-      optionA: row['Option A']?.trim(),
-      optionB: row['Option B']?.trim(),
-      optionC: row['Option C']?.trim(),
-      optionD: row['Option D']?.trim(),
-      optionE: row['Option E']?.trim(),
-      scoreA: parseInt(row['Score A']) || 0,
-      scoreB: parseInt(row['Score B']) || 0,
-      scoreC: parseInt(row['Score C']) || 0,
-      scoreD: parseInt(row['Score D']) || 0,
-      scoreE: parseInt(row['Score E']) || 0,
-      //branchingLogic: row['Branching Logic']?.trim(),
-      //branchOptionA: row['Branch_OptionA']?.trim(),
-      //branchOptionB: row['Branch_OptionB']?.trim(),
-      //branchOptionC: row['Branch_OptionC']?.trim(),
-      //branchOptionD: row['Branch_OptionD']?.trim()
+      optionA:      row['Option A']?.trim(),
+      optionB:      row['Option B']?.trim(),
+      optionC:      row['Option C']?.trim(),
+      optionD:      row['Option D']?.trim(),
+      optionE:      row['Option E']?.trim(),
+      scoreA:       parseInt(row['Score A']) || 0,
+      scoreB:       parseInt(row['Score B']) || 0,
+      scoreC:       parseInt(row['Score C']) || 0,
+      scoreD:       parseInt(row['Score D']) || 0,
+      scoreE:       parseInt(row['Score E']) || 0,
     }));
 
     setQuestions(parsedQuestions);
@@ -102,354 +70,290 @@ const loadQuestions = async ({
     const progress = {};
     uniqueCategories.forEach(category => {
       const categoryQuestions = parsedQuestions.filter(q => q.category === category);
-      progress[category] = {
-        total: categoryQuestions.length,
-        answered: 0,
-        questions: categoryQuestions
-      };
+      progress[category] = { total: categoryQuestions.length, answered: 0, questions: categoryQuestions };
     });
     setCategoryProgress(progress);
 
-    if (uniqueCategories.length > 0) {
-      setCurrentCategory(uniqueCategories[0]);
-    }
-
+    if (uniqueCategories.length > 0) setCurrentCategory(uniqueCategories[0]);
     setLoading(false);
   } catch (err) {
     console.error('Error loading questions:', err);
-    setError('Failed to load questions. Please make sure questions.csv is in the public folder and formatted correctly.');
+    setError('Failed to load questions. Please make sure mcq_questions.csv is in the public folder.');
     setLoading(false);
   }
 };
 
 function Assessment() {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const location  = useLocation();
+  const navigate  = useNavigate();
+
   const [hasRestoredState, setHasRestoredState] = useState(false);
-  const [userInfo ,setUserInfo] = useState(() =>{
+  const [userInfo, setUserInfo] = useState(() => {
     if (location.state?.userInfo) return location.state.userInfo;
     const saved = loadProgressFromStorage();
     return saved?.userInfo || {};
   });
-  const [questions, setQuestions] = useState([]);
+
+  const [questions,            setQuestions]            = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState('');
-  const [answers, setAnswers] = useState({});
-  const answersRef = React.useRef({});
-  const [categories, setCategories] = useState([]);
-  const [currentCategory, setCurrentCategory] = useState('');
-  const [categoryProgress, setCategoryProgress] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [startTime] = useState(Date.now());
-  const [remainingTime, setRemainingTime] = useState(20 * 60); 
-  const [assessmentComplete, setAssessmentComplete] = useState(false);
+  const [selectedAnswer,       setSelectedAnswer]       = useState('');
+  const [answers,              setAnswers]              = useState({});
+  const [categories,           setCategories]           = useState([]);
+  const [currentCategory,      setCurrentCategory]      = useState('');
+  const [categoryProgress,     setCategoryProgress]     = useState({});
+  const [loading,              setLoading]              = useState(true);
+  const [error,                setError]                = useState('');
+  const [remainingTime,        setRemainingTime]        = useState(20 * 60);
+  const [assessmentComplete,   setAssessmentComplete]   = useState(false); // B14
 
- 
-useEffect(() => {
-  const timer = setInterval(() => {
-    setRemainingTime(prevTime => {
-      if (prevTime <= 1) {
-        clearInterval(timer);
-        return 0;
-      }
-      return prevTime - 1;
-    });
-  }, 1000);
-  return () => clearInterval(timer);
-}, []);
+  // Timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRemainingTime(prev => {
+        if (prev <= 1) { clearInterval(timer); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-// Add a separate effect that watches remainingTime and fires completion:
-useEffect(() => {
-  if (remainingTime === 0 && !assessmentComplete) {
-    handleMCQCompletion();
-  }
-}, [remainingTime]);
+  // B14: timer fires completion; flag prevents double-fire
+  useEffect(() => {
+    if (remainingTime === 0 && !assessmentComplete) handleMCQCompletion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingTime, assessmentComplete]);
 
   useEffect(() => {
-  loadQuestions({
-    setQuestions,
-    setCategories,
-    setCategoryProgress,
-    setCurrentCategory,
-    setLoading,
-    setError
-  });
-}, []);
-const {
-  previousAnswers = {},
-  previousCategory = '',
-  previousIndex = 0,
-  previousRemainingTime = 20 * 60,
-  previousQuestions = [],
-  previousProgress = {}
-} = location.state || {};
-useEffect(() => {
-if (!hasRestoredState && !loading && questions.length > 0 ) {
-  (async () => {
-  let restored = null;
-  if(location.state && Object.keys(previousAnswers).length > 0){
-    restored = {
-      userInfo: location.state.userInfo || userInfo,
-      answers : previousAnswers,
-      currentCategory : previousCategory,
-      currentQuestionIndex : previousIndex,
-      remainingTime : previousRemainingTime,
-      categoryProgress : previousProgress
-    };
-  } else {
-    const saved = loadProgressFromStorage();
-    if(saved && saved.answers && Object.keys(saved.answers).length > 0){
-      restored = saved;
-    } else {
-      // Nothing in navigation state or localStorage — e.g. localStorage was
-      // cleared and the user logged back in. Fall back to whatever was last
-      // saved to the database for this account.
-      const userId = localStorage.getItem('user_id');
-      if (userId) {
-        try {
-          const res = await fetch(`https://bizvidya-intern.onrender.com/get_progress/${userId}/mcq`);
-          if (res.ok) {
-            const { data } = await res.json();
-            if (data && data.answers && Object.keys(data.answers).length > 0) {
-              restored = data;
+    loadQuestions({ setQuestions, setCategories, setCategoryProgress, setCurrentCategory, setLoading, setError });
+  }, []);
+
+  // Flush the debounced save on unmount so a mid-question exit isn't lost
+  useEffect(() => () => saveProgressToDB.flush(), []);
+
+  const {
+    previousAnswers       = {},
+    previousCategory      = '',
+    previousIndex         = 0,
+    previousRemainingTime = 20 * 60,
+    previousProgress      = {},
+  } = location.state || {};
+
+  // Restore progress from navigation state → localStorage → DB (in that order)
+  useEffect(() => {
+    if (hasRestoredState || loading || questions.length === 0) return;
+
+    (async () => {
+      let restored = null;
+
+      if (location.state && Object.keys(previousAnswers).length > 0) {
+        restored = {
+          userInfo:            location.state.userInfo || userInfo,
+          answers:             previousAnswers,
+          currentCategory:     previousCategory,
+          currentQuestionIndex: previousIndex,
+          remainingTime:       previousRemainingTime,
+          categoryProgress:    previousProgress,
+        };
+      } else {
+        const saved = loadProgressFromStorage();
+        if (saved && saved.answers && Object.keys(saved.answers).length > 0) {
+          restored = saved;
+        } else {
+          const userId = localStorage.getItem('user_id');
+          if (userId) {
+            try {
+              const { data } = await get(`/get_progress/${userId}/mcq`);
+              if (data?.answers && Object.keys(data.answers).length > 0) restored = data;
+            } catch (err) {
+              if (err.status !== 404) console.error('Failed to restore MCQ progress:', err);
             }
           }
-        } catch (err) {
-          console.error('Failed to restore MCQ progress from the database:', err);
         }
       }
-    }
-  }
 
-  if(restored){
-    if (restored.userInfo) setUserInfo(restored.userInfo);
-    setAnswers(restored.answers);
-    answersRef.current = restored.answers;
-    setCurrentCategory(restored.currentCategory || categories[0]);
-    setCurrentQuestionIndex(restored.currentQuestionIndex || 0);
-    setRemainingTime(restored.remainingTime ?? 20*60);
+      if (restored) {
+        if (restored.userInfo) setUserInfo(restored.userInfo);
+        setAnswers(restored.answers);
+        setCurrentCategory(restored.currentCategory || categories[0]);
+        setCurrentQuestionIndex(restored.currentQuestionIndex || 0);
+        setRemainingTime(restored.remainingTime ?? 20 * 60);
 
-    if (restored.categoryProgress && Object.keys(restored.categoryProgress).length > 0){
-        const recalculated = {};
-  Object.entries(restored.categoryProgress).forEach(([category, data]) => {
-    recalculated[category] = {
-      ...data,
-      answered: (data.questions || []).filter(q => restored.answers[q.id]).length
-    };
-  });
-      setCategoryProgress(recalculated);
-      setCategories(Object.keys(restored.categoryProgress));
-    }else{
-      const progress = {}
-      categories.forEach(category => {
-        const categoryQuestions = questions.filter(q => q.category ===category);
-        progress[category] = {
-          total: categoryQuestions.length,
-          answered: categoryQuestions.filter(q => restored.answers[q.id]).length,
-          questions: categoryQuestions
-        };
-      });
-      setCategoryProgress(progress);
-    }
- 
+        if (restored.categoryProgress && Object.keys(restored.categoryProgress).length > 0) {
+          const recalculated = {};
+          Object.entries(restored.categoryProgress).forEach(([category, data]) => {
+            recalculated[category] = {
+              ...data,
+              answered: (data.questions || []).filter(q => restored.answers[q.id]).length,
+            };
+          });
+          setCategoryProgress(recalculated);
+          setCategories(Object.keys(restored.categoryProgress));
+        } else {
+          const progress = {};
+          categories.forEach(category => {
+            const cqs = questions.filter(q => q.category === category);
+            progress[category] = {
+              total:    cqs.length,
+              answered: cqs.filter(q => restored.answers[q.id]).length,
+              questions: cqs,
+            };
+          });
+          setCategoryProgress(progress);
+        }
 
-    const firstQuestion = questions.find(q => q.category === restored.currentCategory) || questions[0];
-    setSelectedAnswer(restored.answers[firstQuestion?.id] || '');
-  }else{  
-   try {
-      localStorage.removeItem('openEndedProgress');
-      localStorage.removeItem('assessmentResultsData');
-    } catch (e) {
-      console.error('Failed to clear stale downstream progress:', e);
-    }
-  }
-
-  setHasRestoredState(true);
-  })();
-  }
-}, [loading, questions, hasRestoredState]);
-
-// Keep localStorage in sync as the user progresses, so a refresh (F5) or
-// closed tab doesn't wipe their answers. Skipped until the restore effect
-// above has run once, so we don't overwrite saved data with blank initial
-// state.
-useEffect(() => {
-  if (!hasRestoredState) return;
-  const progressPayload = {
-    userInfo,
-    answers,
-    currentCategory,
-    currentQuestionIndex,
-    remainingTime,
-    categoryProgress
-  };
-  saveProgressToStorage(progressPayload);
-  saveProgressToDB(progressPayload);
-}, [hasRestoredState, userInfo, answers, currentCategory, currentQuestionIndex, remainingTime, categoryProgress]);
-
-
-const handleMCQCompletion = async () => {
-  console.log("called handlemcq");
-  const totalQuestions = questions.length;
-  console.log("total questions :",totalQuestions);
-  let totalScore = 0;
-  const categoryScores = {};
-  console.log("category scores:", categoryScores);
-  let maxPossibleScore = 0;
-  const maxCategoryScores = {};
-
-
-  for (const question of questions) {
-    const selected = answers[question.id];
-
-    let score = 0;
-    switch (selected) {
-      case 'A': score = question.scoreA || 0; break;
-      case 'B': score = question.scoreB || 0; break;
-      case 'C': score = question.scoreC || 0; break;
-      case 'D': score = question.scoreD || 0; break;
-      case 'E': score = question.scoreE || 0; break;
-    }
-
-    totalScore += score;
-
-    const maxForQuestion = Math.max( 
-      question.scoreA || 0,
-      question.scoreB || 0,
-      question.scoreC || 0,
-      question.scoreD || 0,
-      question.scoreE || 0,
-      
-    );
-    maxPossibleScore += maxForQuestion
-if (question.category) {
-  if (!categoryScores[question.category]) {
-    categoryScores[question.category] = 0;
-    maxCategoryScores[question.category] = 0;
-  }
-  categoryScores[question.category] += score;
-  maxCategoryScores[question.category] += maxForQuestion;
-}
-  }
-
-  // Persist MCQ answers + scores to SQL, tied to the user record created on the Home page
-  const userId = localStorage.getItem("user_id");
-  let savedToDB = false;
-  if (userId) {
-    try {
-      const res = await fetch("https://bizvidya-intern.onrender.com/save_mcq_results", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: parseInt(userId, 10),
-          answers,
-          total_score: totalScore,
-          max_possible_score: maxPossibleScore,
-          category_scores: categoryScores,
-          max_category_scores: maxCategoryScores,
-        }),
-      });
-      if (res.ok) {
-        savedToDB = true;
+        const firstQ = questions.find(q => q.category === restored.currentCategory) || questions[0];
+        setSelectedAnswer(restored.answers[firstQ?.id] || '');
       } else {
-        const errData = await res.json().catch(() => ({}));
-        console.error("Failed to save MCQ results:", errData.detail || res.statusText);
+        // Fresh start – clear any stale downstream progress
+        try { localStorage.removeItem('openEndedProgress'); localStorage.removeItem('assessmentResultsData'); } catch {}
       }
-    } catch (e) {
-      console.error("Failed to save MCQ results:", e);
-    }
-  } else {
-    console.error("No user_id found in localStorage — MCQ results were not saved to the database.");
-  }
 
-  // Only wipe the in-progress backups once the final results are confirmed
-  // saved — if the save failed, keep the progress around so nothing is lost.
-  if (savedToDB) {
-    clearProgressFromStorage();
-    try {
-      await fetch(`https://bizvidya-intern.onrender.com/clear_progress/${userId}/mcq`, { method: "DELETE" });
-    } catch (e) {
-      console.error("Failed to clear saved MCQ progress from the database:", e);
-    }
-  }
+      setHasRestoredState(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, questions, hasRestoredState]);
 
-  navigate('/mcq-completion', {
-    state: {
-      answers,
-      totalQuestions,
-      currentCategory,
-      currentQuestionIndex,
-      remainingTime,
-      questions,
-      categoryProgress,
-      totalScore,         
-      categoryScores,
-      maxPossibleScore,
-      maxCategoryScores,
-      userInfo     
-    }
-  });
-};
+  // B5: keep localStorage in sync immediately; DB write is debounced.
+  useEffect(() => {
+    if (!hasRestoredState) return;
+    const payload = { userInfo, answers, currentCategory, currentQuestionIndex, remainingTime, categoryProgress };
+    saveProgressToStorage(payload);
+    saveProgressToDB(payload);           // debounced – not per second
+  }, [hasRestoredState, userInfo, answers, currentCategory, currentQuestionIndex, categoryProgress]);
+  // remainingTime intentionally omitted from DB dependency to avoid one write/sec
 
-  const getCurrentCategoryQuestions = () => {
-    return questions.filter(q => q.category === currentCategory);
+  // ---------------------------------------------------------------------------
+  // MCQ completion
+  // ---------------------------------------------------------------------------
+  const handleMCQCompletion = async (finalAnswers = answers) => {
+    if (assessmentComplete) return;        // B14: prevent double-fire
+    setAssessmentComplete(true);
+
+    const totalQuestions = questions.length;
+    let totalScore = 0;
+    const categoryScores    = {};
+    let maxPossibleScore    = 0;
+    const maxCategoryScores = {};
+
+    for (const question of questions) {
+      const selected = finalAnswers[question.id];
+      let score = 0;
+      switch (selected) {
+        case 'A': score = question.scoreA || 0; break;
+        case 'B': score = question.scoreB || 0; break;
+        case 'C': score = question.scoreC || 0; break;
+        case 'D': score = question.scoreD || 0; break;
+        case 'E': score = question.scoreE || 0; break;
+        default: break;
+      }
+      totalScore += score;
+
+      const maxForQuestion = Math.max(
+        question.scoreA || 0, question.scoreB || 0, question.scoreC || 0,
+        question.scoreD || 0, question.scoreE || 0
+      );
+      maxPossibleScore += maxForQuestion;
+
+      if (question.category) {
+        if (!categoryScores[question.category]) {
+          categoryScores[question.category]    = 0;
+          maxCategoryScores[question.category] = 0;
+        }
+        categoryScores[question.category]    += score;
+        maxCategoryScores[question.category] += maxForQuestion;
+      }
+    }
+
+    const userId = localStorage.getItem('user_id');
+    let savedToDB = false;
+    if (userId) {
+      try {
+        await post('/save_mcq_results', {
+          user_id:           parseInt(userId, 10),
+          answers:           finalAnswers,
+          total_score:       totalScore,
+          max_possible_score: maxPossibleScore,
+          category_scores:   categoryScores,
+          max_category_scores: maxCategoryScores,
+        });
+        savedToDB = true;
+      } catch (e) {
+        console.error('Failed to save MCQ results:', e);
+      }
+    }
+
+    if (savedToDB) {
+      clearProgressFromStorage();
+      try { await del(`/clear_progress/${userId}/mcq`); } catch {}
+    }
+
+    navigate('/mcq-completion', {
+      state: {
+        answers:       finalAnswers,
+        totalQuestions,
+        currentCategory,
+        currentQuestionIndex,
+        remainingTime,
+        questions,
+        categoryProgress,
+        totalScore,
+        categoryScores,
+        maxPossibleScore,
+        maxCategoryScores,
+        userInfo,
+      },
+    });
   };
 
-  const getCurrentQuestion = () => {
-    const categoryQuestions = getCurrentCategoryQuestions();
-    return categoryQuestions[currentQuestionIndex] || null;
-  };
+  // ---------------------------------------------------------------------------
+  // Navigation helpers
+  // ---------------------------------------------------------------------------
+  const getCurrentCategoryQuestions = () => questions.filter(q => q.category === currentCategory);
+  const getCurrentQuestion          = () => getCurrentCategoryQuestions()[currentQuestionIndex] || null;
 
-  const handleAnswerSelect = (option) => {
-    setSelectedAnswer(option);
-  };
+  const handleAnswerSelect = option => setSelectedAnswer(option);
 
   const handleNext = () => {
     const currentQuestion = getCurrentQuestion();
     if (!currentQuestion) return;
 
-   const newAnswers = {
-  ...answers,
-  [currentQuestion.id]: selectedAnswer
-};
-setAnswers(newAnswers);
-answersRef.current = newAnswers;
+    // Build the new answers map
+    const newAnswers = { ...answers, [currentQuestion.id]: selectedAnswer };
+    setAnswers(newAnswers);
 
-const newProgress = { ...categoryProgress };
-Object.keys(newProgress).forEach(cat => {
-  const answeredCount = newProgress[cat].questions.filter(q => newAnswers[q.id]).length;
-  newProgress[cat].answered = answeredCount;
-});
-setCategoryProgress(newProgress);
-    const categoryQuestions = getCurrentCategoryQuestions();
-    
+    // B13: rebuild nested objects, never mutate
+    const newProgress = {};
+    Object.entries(categoryProgress).forEach(([cat, data]) => {
+      newProgress[cat] = {
+        ...data,
+        answered: (data.questions || []).filter(q => newAnswers[q.id]).length,
+      };
+    });
+    setCategoryProgress(newProgress);
+
+    const categoryQuestions    = getCurrentCategoryQuestions();
+    const currentCategoryIndex = categories.indexOf(currentCategory);
+
     if (currentQuestionIndex < categoryQuestions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
-      setSelectedAnswer(answers[categoryQuestions[currentQuestionIndex + 1]?.id] || '');
+      // B12: read from newAnswers, not stale answers
+      setSelectedAnswer(newAnswers[categoryQuestions[currentQuestionIndex + 1]?.id] || '');
+    } else if (currentCategoryIndex < categories.length - 1) {
+      const nextCategory          = categories[currentCategoryIndex + 1];
+      const nextCategoryQuestions = questions.filter(q => q.category === nextCategory);
+      setCurrentCategory(nextCategory);
+      setCurrentQuestionIndex(0);
+      setSelectedAnswer(newAnswers[nextCategoryQuestions[0]?.id] || '');
     } else {
-      const currentCategoryIndex = categories.indexOf(currentCategory);
-      if (currentCategoryIndex < categories.length - 1) {
-        const nextCategory = categories[currentCategoryIndex + 1];
-        setCurrentCategory(nextCategory);
-        setCurrentQuestionIndex(0);
-        const nextCategoryQuestions = questions.filter(q => q.category === nextCategory);
-        setSelectedAnswer(answers[nextCategoryQuestions[0]?.id] || '');
+      // B2: count from newProgress, not the just-updated-but-not-yet-rendered categoryProgress
+      const { answered, total } = Object.values(newProgress).reduce(
+        (acc, cat) => ({ answered: acc.answered + cat.answered, total: acc.total + cat.total }),
+        { answered: 0, total: 0 }
+      );
+      if (total > 0 && answered === total) {
+        handleMCQCompletion(newAnswers);
       } else {
-        
-        const categoriesProgress = Object.values(categoryProgress);
-        let answered = 0;
-        let total = 0;
-        for(const cat of categoriesProgress){
-          answered = answered + cat.answered;
-          total = total + cat.total;
-        }
-        if (answered === total && total > 0){  
-
-        handleMCQCompletion();}
-        else{
-          alert("please answer all the questions")
-        }
+        alert(`You still have ${total - answered} question(s) unanswered.`);
       }
     }
   };
@@ -457,104 +361,89 @@ setCategoryProgress(newProgress);
   const handlePrevious = () => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
-      const categoryQuestions = getCurrentCategoryQuestions();
-      setSelectedAnswer(answers[categoryQuestions[currentQuestionIndex - 1]?.id] || '');
+      const cqs = getCurrentCategoryQuestions();
+      setSelectedAnswer(answers[cqs[currentQuestionIndex - 1]?.id] || '');
     } else {
       const currentCategoryIndex = categories.indexOf(currentCategory);
       if (currentCategoryIndex > 0) {
-        const prevCategory = categories[currentCategoryIndex - 1];
-        setCurrentCategory(prevCategory);
+        const prevCategory          = categories[currentCategoryIndex - 1];
         const prevCategoryQuestions = questions.filter(q => q.category === prevCategory);
+        setCurrentCategory(prevCategory);
         setCurrentQuestionIndex(prevCategoryQuestions.length - 1);
         setSelectedAnswer(answers[prevCategoryQuestions[prevCategoryQuestions.length - 1]?.id] || '');
       }
     }
   };
 
-  const handleQuestionJump = (questionNum) => {
-    const categoryQuestions = getCurrentCategoryQuestions();
-    if (questionNum >= 1 && questionNum <= categoryQuestions.length) {
+  const handleQuestionJump = questionNum => {
+    const cqs = getCurrentCategoryQuestions();
+    if (questionNum >= 1 && questionNum <= cqs.length) {
       setCurrentQuestionIndex(questionNum - 1);
-      setSelectedAnswer(answers[categoryQuestions[questionNum - 1]?.id] || '');
+      setSelectedAnswer(answers[cqs[questionNum - 1]?.id] || '');
     }
   };
 
   const getTotalProgress = () => {
-    const total = Object.values(categoryProgress).reduce((sum, cat) => sum + cat.total, 0);
-    const answered = Object.values(categoryProgress).reduce((sum, cat) => sum + cat.answered, 0);
+    const total    = Object.values(categoryProgress).reduce((s, c) => s + c.total, 0);
+    const answered = Object.values(categoryProgress).reduce((s, c) => s + c.answered, 0);
     return { total, answered };
   };
 
-  const formatTime = (totalSeconds) => {
-    const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-    return `${minutes}:${seconds}`;
+  const formatTime = totalSeconds => {
+    const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const s = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
   };
 
-  if (loading) {
-    return (
-      <div className="loading-container">
-        Loading questions...
-      </div>
+  // ---------------------------------------------------------------------------
+  // Compute scores for the sidebar (needed for MCQ score calculation on display)
+  // ---------------------------------------------------------------------------
+  let totalScore = 0;
+  const categoryScores    = {};
+  let maxPossibleScore    = 0;
+  const maxCategoryScores = {};
+
+  for (const question of questions) {
+    const selected = answers[question.id];
+    let score = 0;
+    switch (selected) {
+      case 'A': score = question.scoreA || 0; break;
+      case 'B': score = question.scoreB || 0; break;
+      case 'C': score = question.scoreC || 0; break;
+      case 'D': score = question.scoreD || 0; break;
+      case 'E': score = question.scoreE || 0; break;
+      default: break;
+    }
+    totalScore += score;
+    const maxForQuestion = Math.max(
+      question.scoreA || 0, question.scoreB || 0, question.scoreC || 0,
+      question.scoreD || 0, question.scoreE || 0
     );
+    maxPossibleScore += maxForQuestion;
+    if (question.category) {
+      if (!categoryScores[question.category]) {
+        categoryScores[question.category]    = 0;
+        maxCategoryScores[question.category] = 0;
+      }
+      categoryScores[question.category]    += score;
+      maxCategoryScores[question.category] += maxForQuestion;
+    }
   }
 
-  if (error) {
-    return (
-      <div className="error-container">
-        <div>
-          <h2>Error Loading Questions</h2>
-          <p>{error}</p>
-          <p>Please ensure your questions.csv file is in the public folder with the correct format.</p>
-        </div>
-      </div>
-    );
-  }
-let totalScore = 0;
-const categoryScores = {};
-let maxPossibleScore = 0;
-const maxCategoryScores = {};
-
-for (const question of questions) {
-  const selected = answers[question.id];
-
-  let score = 0;
-  switch (selected) {
-    case 'A': score = question.scoreA || 0; break;
-    case 'B': score = question.scoreB || 0; break;
-    case 'C': score = question.scoreC || 0; break;
-    case 'D': score = question.scoreD || 0; break;
-    case 'E': score = question.scoreE || 0; break;
-  }
-
-  totalScore += score;
-
-  const maxForQuestion = Math.max(
-    question.scoreA || 0,
-    question.scoreB || 0,
-    question.scoreC || 0,
-    question.scoreD || 0,
-    question.scoreE || 0
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+  if (loading) return <div className="loading-container">Loading questions...</div>;
+  if (error)   return (
+    <div className="error-container">
+      <h2>Error Loading Questions</h2>
+      <p>{error}</p>
+    </div>
   );
 
-  maxPossibleScore += maxForQuestion;
-
-  if (question.category) {
-    if (!categoryScores[question.category]) {
-      categoryScores[question.category] = 0;
-      maxCategoryScores[question.category] = 0;
-    }
-
-    categoryScores[question.category] += score;
-    maxCategoryScores[question.category] += maxForQuestion;
-  }
-}
-console.log("Current Category:", currentCategory);
-console.log(categoryScores[currentCategory]);
-console.log(maxCategoryScores[currentCategory]);
-  const currentQuestion = getCurrentQuestion();
-  const categoryQuestions = getCurrentCategoryQuestions();
-  const totalProgress = getTotalProgress();
+  const currentQuestion      = getCurrentQuestion();
+  const categoryQuestionsArr = getCurrentCategoryQuestions();
+  const totalProgress        = getTotalProgress();
   const currentCategoryIndex = categories.indexOf(currentCategory);
 
   return (
@@ -575,23 +464,21 @@ console.log(maxCategoryScores[currentCategory]);
               {totalProgress.answered} of {totalProgress.total} completed
             </div>
             <div className="progress-bar">
-              <div 
+              <div
                 className="progress-fill"
-                style={{
-                  width: `${totalProgress.total > 0 ? (totalProgress.answered / totalProgress.total) * 100 : 0}%`
-                }}
+                style={{ width: `${totalProgress.total > 0 ? (totalProgress.answered / totalProgress.total) * 100 : 0}%` }}
               />
             </div>
           </div>
 
-          {categories.map((category) => (
+          {categories.map(category => (
             <div
               key={category}
               onClick={() => {
                 setCurrentCategory(category);
                 setCurrentQuestionIndex(0);
-                const categoryQuestions = questions.filter(q => q.category === category);
-                setSelectedAnswer(answers[categoryQuestions[0]?.id] || '');
+                const cqs = questions.filter(q => q.category === category);
+                setSelectedAnswer(answers[cqs[0]?.id] || '');
               }}
               className={`category-item ${category === currentCategory ? 'active' : ''}`}
             >
@@ -605,10 +492,7 @@ console.log(maxCategoryScores[currentCategory]);
                   {Array.from({ length: categoryProgress[category]?.questions.length || 0 }, (_, i) => i + 1).map(num => (
                     <button
                       key={num}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleQuestionJump(num);
-                      }}
+                      onClick={e => { e.stopPropagation(); handleQuestionJump(num); }}
                       className={`question-number ${num === currentQuestionIndex + 1 ? 'current' : ''} ${
                         answers[categoryProgress[category]?.questions[num - 1]?.id] ? 'answered' : ''
                       }`}
@@ -628,24 +512,25 @@ console.log(maxCategoryScores[currentCategory]);
               <div className="question-header">
                 <h2 className="question-category">{currentCategory}</h2>
                 <div className="question-counter">
-                  Question {currentQuestionIndex + 1} of {categoryQuestions.length}
+                  Question {currentQuestionIndex + 1} of {categoryQuestionsArr.length}
                 </div>
               </div>
 
               <div className="question-content">
-                <h3 className="question-text">
-                  {currentQuestion.questionText}
-                </h3>
-                
+                <h3 className="question-text">{currentQuestion.questionText}</h3>
+
                 <div className="options-container">
                   {[
                     { key: 'A', text: currentQuestion.optionA },
                     { key: 'B', text: currentQuestion.optionB },
                     { key: 'C', text: currentQuestion.optionC },
                     { key: 'D', text: currentQuestion.optionD },
-                    { key: 'E', text: currentQuestion.optionE }
-                  ].filter(option => option.text).map(option => (
-                    <label key={option.key} className={`option-label ${selectedAnswer === option.key ? 'selected' : ''}`}>
+                    { key: 'E', text: currentQuestion.optionE },
+                  ].filter(o => o.text).map(option => (
+                    <label
+                      key={option.key}
+                      className={`option-label ${selectedAnswer === option.key ? 'selected' : ''}`}
+                    >
                       <input
                         type="radio"
                         name="answer"
@@ -661,19 +546,17 @@ console.log(maxCategoryScores[currentCategory]);
               </div>
 
               <div className="navigation">
-                <button 
+                <button
                   onClick={handlePrevious}
                   disabled={currentQuestionIndex === 0 && currentCategoryIndex === 0}
                   className="nav-button prev-button"
                 >
                   ← Previous
                 </button>
-                
                 <div className="category-indicator">
                   Category {currentCategoryIndex + 1} of {categories.length}
                 </div>
-                
-                <button 
+                <button
                   onClick={handleNext}
                   disabled={!selectedAnswer}
                   className="nav-button next-button"

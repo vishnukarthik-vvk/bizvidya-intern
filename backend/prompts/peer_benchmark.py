@@ -1,3 +1,15 @@
+"""FIXED — bug B3.
+
+The JSON example previously used single braces while the string is passed to
+`.format()` in app.py, so every call raised
+    KeyError: '\\n  "peer_benchmark"'
+before the LLM was ever reached, and the bare `except Exception` returned the
+canned fallback to every user.
+
+All literal braces are now doubled. Verified with:
+    PEER_BENCHMARK_PROMPT.format(name=..., domain=..., ...)  ->  no exception
+"""
+
 PEER_BENCHMARK_SYSTEM_PROMPT = """
 You are a career market intelligence analyst.
 Return only valid JSON responses without any additional text or formatting.
@@ -7,7 +19,8 @@ PEER_BENCHMARK_PROMPT = """
 ## ROLE
 You are acting as a career market intelligence analyst for a skill-assessment platform.
 
-Your goal is to generate highly personalized, market-aligned insights that compare the user's performance to peers and map their skills to in-demand industry traits.
+Your goal is to generate highly personalized, market-aligned insights that compare the
+user's performance to peers and map their skills to in-demand industry traits.
 
 ---
 
@@ -26,26 +39,28 @@ Your goal is to generate highly personalized, market-aligned insights that compa
 ---
 
 1. Percentile Positioning
-- Predict the user's skill percentile vs. peers in the same domain & career goal.
-- Justify percentile using peer performance trends or aggregated test-taker data.
+- Estimate the user's skill percentile vs. peers in the same domain and career goal.
+- Ground the estimate in the scores and benchmarks above, not in invented survey data.
+- Phrase it as an estimate, e.g. "Around the 72nd percentile among peers in {domain}".
 
 2. Peer Benchmark Narrative
-- Write one engaging sentence comparing the user to typical peers, highlighting both competitive edges and gaps.
+- One engaging sentence comparing the user to typical peers, naming both a
+  competitive edge and a gap. Use the actual category names given above.
 
 3. In-Demand Traits Mapping
-- Map two in-demand traits (current job market, internships, hiring trends) to the user's strongest/weakest areas.
-- Be specific.
+- Map exactly two in-demand traits to the user's strongest and weakest areas.
+- Be specific about the kind of role or hiring context each trait matters for.
 
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON in this exact shape:
 
-{
-  "peer_benchmark": {
-    "percentile": "Top 72% among peers in {domain}",
+{{
+  "peer_benchmark": {{
+    "percentile": "Around the 72nd percentile among peers in {domain}",
     "narrative": "Your performance outpaces many peers in problem-solving, but lags in communication skills.",
     "in_demand_traits": [
       "Strong analytical thinking aligns with current hiring demand for data-driven roles",
       "Moderate teamwork scores limit opportunities in agile-based internships"
     ]
-  }
-}
+  }}
+}}
 """

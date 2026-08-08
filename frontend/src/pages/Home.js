@@ -1,12 +1,15 @@
+// src/pages/Home.js
+// Place this file at: src/pages/Home.js
+
 import React, { useState, useEffect } from 'react';
-import Assessment from './Assessment'; 
-import './Home.css';
 import { useNavigate } from 'react-router-dom';
+import './Home.css';
 import { LuBrain } from "react-icons/lu";
 import { MdOutlineWorkOutline } from "react-icons/md";
 import { IoPeopleOutline } from "react-icons/io5";
 import { GiHealthPotion } from "react-icons/gi";
 import { MdFamilyRestroom } from "react-icons/md";
+import { get, api, clearSession, getToken } from '../api';
 
 const STORAGE_KEY = 'skillAssessmentFormData';
 
@@ -21,7 +24,7 @@ const defaultFormData = {
   careerGoals: '',
   careerGoalsOther: '',
   hobbies: '',
-  preferredLanguage: ''
+  preferredLanguage: '',
 };
 
 function Home() {
@@ -29,164 +32,117 @@ function Home() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       return saved ? { ...defaultFormData, ...JSON.parse(saved) } : defaultFormData;
-    } catch (err) {
-      console.error('Failed to load saved form data:', err);
+    } catch {
       return defaultFormData;
     }
   });
 
   const navigate = useNavigate();
 
-  // Require login before this page can be used at all.
+  // Require a valid token before this page renders.
   useEffect(() => {
-    const userId = localStorage.getItem('user_id');
-    if (!userId) {
-      navigate('/login');
-    }
+    if (!getToken()) navigate('/login');
   }, [navigate]);
 
-  // Pull the profile already saved on this account (if any) so a returning
-  // user doesn't have to retype everything on a new device/browser.
+  // Pull the profile already saved on this account so a returning user
+  // doesn't have to retype everything on a new device.
   useEffect(() => {
     const userId = localStorage.getItem('user_id');
     if (!userId) return;
 
     (async () => {
       try {
-        const res = await fetch(`https://bizvidya-intern.onrender.com/users/${userId}`);
-
-        if (res.status === 404) {
-          // This user_id no longer exists in the database (e.g. the table was
-          // reset). Clear the stale value instead of looping on the same 404.
-          localStorage.removeItem('user_id');
-          localStorage.removeItem('user_email');
-          navigate('/login');
-          return;
-        }
-
-        if (!res.ok) return;
-        const profile = await res.json();
-
+        const profile = await get(`/users/${userId}`);
         setFormData(prev => ({
           ...prev,
-          fullName: profile.fullName || prev.fullName,
-          age: profile.age ?? prev.age,
-          educationLevel: profile.educationLevel || prev.educationLevel,
-          workExperience: profile.workExperience || prev.workExperience,
-          currentRole: profile.currentRole || prev.currentRole,
+          fullName:         profile.fullName         || prev.fullName,
+          age:              profile.age              ?? prev.age,
+          educationLevel:   profile.educationLevel   || prev.educationLevel,
+          workExperience:   profile.workExperience   || prev.workExperience,
+          currentRole:      profile.currentRole      || prev.currentRole,
           professionalDomain: profile.professionalDomain || prev.professionalDomain,
-          careerGoals: profile.careerGoals || prev.careerGoals,
-          hobbies: profile.hobbies || prev.hobbies,
+          careerGoals:      profile.careerGoals      || prev.careerGoals,
+          hobbies:          profile.hobbies          || prev.hobbies,
           preferredLanguage: profile.preferredLanguage || prev.preferredLanguage,
         }));
       } catch (err) {
-        console.error('Failed to load saved profile:', err);
+        if (err.status === 404) {
+          clearSession();
+          navigate('/login');
+        }
+        // other errors: silently ignore, user just fills the form themselves
       }
     })();
-  }, []);
+  }, [navigate]);
+
+  // Keep localStorage in sync as the form changes.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
+    } catch {
+      // quota exceeded — not critical
+    }
+  }, [formData]);
+
+  const handleChange = e => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleClearForm = () => {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    setFormData(defaultFormData);
+  };
 
   const handleLogout = () => {
-    localStorage.removeItem('user_id');
-    localStorage.removeItem('user_email');
+    clearSession();
     localStorage.removeItem(STORAGE_KEY);
     navigate('/login');
   };
 
-  // Whenever formData changes, save it so it survives refreshes
-  // and coming back from the /assessment page.
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
-    } catch (err) {
-      console.error('Failed to save form data:', err);
-    }
-  }, [formData]);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prevState => ({
-      ...prevState,
-      [name]: value
-    }));
-  };
+    const professionalDomainValue =
+      formData.professionalDomain === 'other'
+        ? formData.professionalDomainOther.trim()
+        : formData.professionalDomain;
 
-  const handleClearForm = () => {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (err) {
-      console.error('Failed to clear saved form data:', err);
-    }
-    setFormData(defaultFormData);
-  };
+    const careerGoalsValue =
+      formData.careerGoals === 'other'
+        ? formData.careerGoalsOther.trim()
+        : formData.careerGoals;
 
-   const handleSubmit = async (e) => {
-  e.preventDefault();
-
-  
-  const professionalDomainValue =
-    formData.professionalDomain === 'other'
-      ? formData.professionalDomainOther.trim()
-      : formData.professionalDomain;
-
-  const careerGoalsValue =
-    formData.careerGoals === 'other'
-      ? formData.careerGoalsOther.trim()
-      : formData.careerGoals;
-
- 
-  if (!formData.fullName || !formData.age || !formData.educationLevel || !professionalDomainValue || !careerGoalsValue) {
-    alert('Please fill in all required fields');
-    return;
-  }
-
- const finalFormData = {
-  ...formData,
-  professionalDomain: professionalDomainValue,
-  careerGoals: careerGoalsValue
-};
-
-try {
-  const userId = localStorage.getItem("user_id");
-  if (!userId) {
-    navigate("/login");
-    return;
-  }
-
-  const response = await fetch(`https://bizvidya-intern.onrender.com/users/${userId}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(finalFormData),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    if (response.status === 404) {
-      localStorage.removeItem("user_id");
-      localStorage.removeItem("user_email");
-      alert("Your session has expired or your account could not be found. Please log in again.");
-      navigate("/login");
+    if (!formData.fullName || !formData.age || !formData.educationLevel ||
+        !professionalDomainValue || !careerGoalsValue) {
+      alert('Please fill in all required fields');
       return;
     }
-    throw new Error(data.detail || "Failed to save user.");
-  }
 
+    const finalFormData = {
+      ...formData,
+      professionalDomain: professionalDomainValue,
+      careerGoals: careerGoalsValue,
+    };
 
-  console.log(data);
+    try {
+      const userId = localStorage.getItem('user_id');
+      if (!userId) { navigate('/login'); return; }
 
-  navigate("/assessment", {
-    state: {
-      userInfo: finalFormData,
-      userId: userId,
-    },
-  });
+      await api(`/users/${userId}`, { method: 'PUT', body: finalFormData });
 
-} catch (error) {
-  console.error(error);
-  alert("Failed to save user information.");
-}
-   };
+      navigate('/assessment', { state: { userInfo: finalFormData, userId } });
+    } catch (err) {
+      if (err.status === 404) {
+        clearSession();
+        alert('Your session has expired. Please log in again.');
+        navigate('/login');
+        return;
+      }
+      alert(err.detail || 'Failed to save user information.');
+    }
+  };
+
   return (
     <div className="container">
       <header>
@@ -194,7 +150,10 @@ try {
           Log out
         </button>
         <h1>Professional Skill Assessment</h1>
-        <p className="subtitle">Discover your strengths and unlock your potential with our comprehensive skill evaluation designed for students and professionals</p>
+        <p className="subtitle">
+          Discover your strengths and unlock your potential with our comprehensive skill evaluation
+          designed for students and professionals.
+        </p>
       </header>
 
       <div className="content-grid">
@@ -210,11 +169,11 @@ try {
         <section className="skills-section">
           <h2>Skill Categories</h2>
           <div className="skills-grid">
-            <div className="skill-item">< LuBrain />Cognitive & Creative Skills</div>
-            <div className="skill-item"><MdOutlineWorkOutline/>Work & Professional Behavior</div>
-            <div className="skill-item"><IoPeopleOutline/>Emotional & Social Competence</div>
-            <div className="skill-item"><GiHealthPotion />Personal Management & Wellness</div>
-            <div className="skill-item"><MdFamilyRestroom/>Family & Relationships</div>
+            <div className="skill-item"><LuBrain />Cognitive &amp; Creative Skills</div>
+            <div className="skill-item"><MdOutlineWorkOutline />Work &amp; Professional Behavior</div>
+            <div className="skill-item"><IoPeopleOutline />Emotional &amp; Social Competence</div>
+            <div className="skill-item"><GiHealthPotion />Personal Management &amp; Wellness</div>
+            <div className="skill-item"><MdFamilyRestroom />Family &amp; Relationships</div>
           </div>
         </section>
       </div>
@@ -222,46 +181,27 @@ try {
       <section className="form-section">
         <h2>Tell Us About Yourself</h2>
         <p>This helps us personalize your assessment experience.</p>
-        
+
         <form onSubmit={handleSubmit}>
           <div className="form-row">
             <div className="form-group">
               <label htmlFor="fullName">Full Name *</label>
-              <input 
-                type="text" 
-                id="fullName" 
-                name="fullName" 
-                value={formData.fullName}
-                onChange={handleChange}
-                placeholder="Enter your full name" 
-                required 
-              />
+              <input type="text" id="fullName" name="fullName"
+                value={formData.fullName} onChange={handleChange}
+                placeholder="Enter your full name" required />
             </div>
             <div className="form-group">
               <label htmlFor="age">Age *</label>
-              <input 
-                type="number" 
-                id="age" 
-                name="age" 
-                value={formData.age}
-                onChange={handleChange}
-                placeholder="Your age" 
-                min="1"
-                max="120"
-                required 
-              />
+              <input type="number" id="age" name="age"
+                value={formData.age} onChange={handleChange}
+                placeholder="Your age" min="1" max="120" required />
             </div>
           </div>
 
           <div className="form-group">
             <label htmlFor="educationLevel">Education Level *</label>
-            <select 
-              id="educationLevel" 
-              name="educationLevel" 
-              value={formData.educationLevel}
-              onChange={handleChange}
-              required
-            >
+            <select id="educationLevel" name="educationLevel"
+              value={formData.educationLevel} onChange={handleChange} required>
               <option value="">Select your education level</option>
               <option value="highSchool">High School</option>
               <option value="undergraduate">Undergraduate</option>
@@ -274,113 +214,81 @@ try {
 
           <div className="form-group">
             <label htmlFor="workExperience">Work Experience</label>
-            <select 
-              id="workExperience" 
-              name="workExperience" 
-              value={formData.workExperience}
-              onChange={handleChange}
-            >
+            <select id="workExperience" name="workExperience"
+              value={formData.workExperience} onChange={handleChange}>
               <option value="">Select your experience level</option>
               <option value="noExperience">No experience</option>
-              <option value="entryLevel">Entry Level (0-2 years)</option>
-              <option value="midLevel">Mid Level (3-5 years)</option>
+              <option value="entryLevel">Entry Level (0–2 years)</option>
+              <option value="midLevel">Mid Level (3–5 years)</option>
               <option value="seniorLevel">Senior Level (5+ years)</option>
               <option value="other">Other</option>
             </select>
           </div>
 
           <div className="form-group">
-            <label htmlFor="currentRole">Current Role/Field of Study</label>
-            <input 
-              type="text" 
-              id="currentRole" 
-              name="currentRole" 
-              value={formData.currentRole}
-              onChange={handleChange}
-              placeholder="e.g. Software Engineer, Marketing Student, etc." 
-            />
+            <label htmlFor="currentRole">Current Role / Field of Study</label>
+            <input type="text" id="currentRole" name="currentRole"
+              value={formData.currentRole} onChange={handleChange}
+              placeholder="e.g. Software Engineer, Marketing Student" />
           </div>
+
           <div className="form-group">
-  <label htmlFor="professionalDomain">Professional Domain or Field of Interest</label>
-  <select
-    id="professionalDomain"
-    name="professionalDomain"
-    value={formData.professionalDomain}
-    onChange={handleChange}
-  >
-    <option value="">Select your domain</option>
-    <option value="dataScience">Data Science</option>
-    <option value="finance">Finance</option>
-    <option value="uxDesign">UX Design</option>
-    <option value="marketing">Marketing</option>
-    <option value="softwareEngineering">Software Engineering</option>
-    <option value="other">Other</option>
-  </select>
-  {formData.professionalDomain === 'other' && (
-    <input
-      type="text"
-      name="professionalDomainOther"
-      value={formData.professionalDomainOther}
-      onChange={handleChange}
-      placeholder="Please specify your domain"
-      required
-    />
-  )}
-</div>
+            <label htmlFor="professionalDomain">Professional Domain or Field of Interest</label>
+            <select id="professionalDomain" name="professionalDomain"
+              value={formData.professionalDomain} onChange={handleChange}>
+              <option value="">Select your domain</option>
+              <option value="dataScience">Data Science</option>
+              <option value="finance">Finance</option>
+              <option value="uxDesign">UX Design</option>
+              <option value="marketing">Marketing</option>
+              <option value="softwareEngineering">Software Engineering</option>
+              <option value="other">Other</option>
+            </select>
+            {formData.professionalDomain === 'other' && (
+              <input type="text" name="professionalDomainOther"
+                value={formData.professionalDomainOther} onChange={handleChange}
+                placeholder="Please specify your domain" required />
+            )}
+          </div>
 
-<div className="form-group">
-  <label htmlFor="careerGoals">Career Aspirations or Goals</label>
-  <select
-    id="careerGoals"
-    name="careerGoals"
-    value={formData.careerGoals}
-    onChange={handleChange}
-  >
-    <option value="">Select your career goal</option>
-    <option value="productManager">Become a Product Manager</option>
-    <option value="dataAnalyst">Become a Data Analyst</option>
-    <option value="teamLead">Become a Team Lead</option>
-    <option value="entrepreneur">Start my own business</option>
-    <option value="researcher">Pursue Research</option>
-    <option value="other">Other</option>
-  </select>
-   {formData.careerGoals === 'other' && (
-    <input
-      type="text"
-      name="careerGoalsOther"
-      value={formData.careerGoalsOther}
-      onChange={handleChange}
-      placeholder="Please specify your career goal"
-      required
-    />
-  )}
-</div>
+          <div className="form-group">
+            <label htmlFor="careerGoals">Career Aspirations or Goals</label>
+            <select id="careerGoals" name="careerGoals"
+              value={formData.careerGoals} onChange={handleChange}>
+              <option value="">Select your career goal</option>
+              <option value="productManager">Become a Product Manager</option>
+              <option value="dataAnalyst">Become a Data Analyst</option>
+              <option value="teamLead">Become a Team Lead</option>
+              <option value="entrepreneur">Start my own business</option>
+              <option value="researcher">Pursue Research</option>
+              <option value="other">Other</option>
+            </select>
+            {formData.careerGoals === 'other' && (
+              <input type="text" name="careerGoalsOther"
+                value={formData.careerGoalsOther} onChange={handleChange}
+                placeholder="Please specify your career goal" required />
+            )}
+          </div>
 
+          <div className="form-group">
+            <label htmlFor="hobbies">
+              Hobbies or Personal Interests{' '}
+              <span style={{ fontWeight: 'normal', color: '#777' }}>(optional)</span>
+            </label>
+            <input type="text" id="hobbies" name="hobbies"
+              value={formData.hobbies} onChange={handleChange}
+              placeholder="e.g. Sketching, Football, Reading" />
+          </div>
 
-<div className="form-group">
-  <label htmlFor="hobbies">Hobbies or Personal Interests <span style={{ fontWeight: 'normal', color: '#777' }}>(optional)</span></label>
-  <input
-    type="text"
-    id="hobbies"
-    name="hobbies"
-    value={formData.hobbies}
-    onChange={handleChange}
-    placeholder="e.g. Sketching, Football, Reading"
-  />
-</div>
-
-<div className="form-group">
-  <label htmlFor="preferredLanguage">Preferred Language Fluency <span style={{ fontWeight: 'normal', color: '#777' }}>(optional)</span></label>
-  <input
-    type="text"
-    id="preferredLanguage"
-    name="preferredLanguage"
-    value={formData.preferredLanguage}
-    onChange={handleChange}
-    placeholder="e.g. English, Hindi, Telugu"
-  />
-</div>
-
+          <div className="form-group">
+            <label htmlFor="preferredLanguage">
+              Preferred Language Fluency{' '}
+              <span style={{ fontWeight: 'normal', color: '#777' }}>(optional)</span>
+            </label>
+            <input type="text" id="preferredLanguage" name="preferredLanguage"
+              value={formData.preferredLanguage} onChange={handleChange}
+              placeholder="e.g. English, Hindi, Telugu" />
+          </div>
 
           <button type="submit" className="start-button">Start Assessment</button>
           <button type="button" className="clear-button" onClick={handleClearForm}>
@@ -388,7 +296,7 @@ try {
           </button>
         </form>
 
-        <p className="assessment-time">Assessment takes approximately 15-20 minutes to complete</p>
+        <p className="assessment-time">Assessment takes approximately 15–20 minutes to complete</p>
       </section>
     </div>
   );
