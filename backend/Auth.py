@@ -1,23 +1,22 @@
-"""Password hashing and email OTP — replaces the original Auth.py.
 
-Changes from the original:
-  B8  `random.randint` -> `secrets.randbelow`. The original used the Mersenne
-      Twister, which is not a CSPRNG; observing a few codes narrows the state.
-  B8  `verify_otp_code` centralises single-use enforcement and the attempt cap.
-  --  bumped PBKDF2 iterations from 100k to 480k (OWASP 2023 guidance for
-      PBKDF2-HMAC-SHA256). Old hashes still verify; see `needs_rehash`.
-"""
 
 import hashlib
 import os
 import secrets
-from datetime import datetime, timezone
+import jwt
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 import requests
 
 PBKDF2_ITERATIONS = 480_000
 MAX_OTP_ATTEMPTS = 5
+
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET is not set")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 
 # ---------------------------------------------------------------- OTP
@@ -155,3 +154,14 @@ def needs_rehash(stored: Optional[str]) -> bool:
         return int(parts[0]) < PBKDF2_ITERATIONS
     except (ValueError, IndexError):
         return True
+
+
+def create_access_token(user) -> str:
+    """Signed JWT carrying the claims the frontend's RequireAuth/RequireStaff need."""
+    payload = {
+        "sub": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)

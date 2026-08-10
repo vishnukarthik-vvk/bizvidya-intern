@@ -21,6 +21,8 @@ import PrivacySettings     from './components/PrivacySettings';
 
 import { getToken, getRole } from './api';
 
+console.log('CLIENT ID:', process.env.REACT_APP_GOOGLE_CLIENT_ID);
+
 // Redirect to /login if there is no session token.
 function RequireAuth({ children }) {
   return getToken() ? children : <Navigate to="/login" replace />;

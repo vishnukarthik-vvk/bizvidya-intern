@@ -24,7 +24,7 @@ from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 from schemas import UserCreate, MCQResultCreate, OpenEndedResultCreate, AssessmentReportSave, SignupRequest, LoginRequest, ProgressSave
 from schemas import UserCreate, MCQResultCreate, OpenEndedResultCreate, AssessmentReportSave, SignupRequest, LoginRequest, GoogleAuthRequest, OTPVerifyRequest, ResendOTPRequest
-from Auth import hash_password , verify_password, generate_otp, send_otp_email
+from Auth import hash_password, verify_password, generate_otp, send_otp_email, create_access_token
 load_dotenv() 
 
 Base.metadata.create_all(bind=engine)
@@ -315,10 +315,12 @@ def login(payload:LoginRequest , db: Session = Depends(get_db)):
         )
 
     return {
-        "message" : "Login sucessful",
-        "user_id" : db_user.id,
+        "message": "Login successful",
+        "access_token": create_access_token(db_user),
+        "user_id": db_user.id,
         "email": db_user.email,
-        "fullName" : db_user.fullName,
+        "fullName": db_user.fullName,
+        "role": db_user.role,
     }
 @app.post("/verify-otp")
 def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
@@ -404,9 +406,11 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
 
     return {
         "message": "Login successful",
+        "access_token": create_access_token(db_user),
         "user_id": db_user.id,
         "email": db_user.email,
         "fullName": db_user.fullName,
+        "role": db_user.role,
     }
 
 @app.post("/save_mcq_results")
