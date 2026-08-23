@@ -9,7 +9,7 @@ import { MdOutlineWorkOutline } from "react-icons/md";
 import { IoPeopleOutline } from "react-icons/io5";
 import { GiHealthPotion } from "react-icons/gi";
 import { MdFamilyRestroom } from "react-icons/md";
-import { get, api, clearSession, getToken } from '../api';
+import { get, api, clearSession, getToken, getRole } from '../api';
 
 const STORAGE_KEY = 'skillAssessmentFormData';
 
@@ -143,12 +143,28 @@ function Home() {
     }
   };
 
-  return (
+return (
     <div className="container">
       <header>
-        <button type="button" className="clear-button" style={{ float: 'right' }} onClick={handleLogout}>
-          Log out
-        </button>
+        <nav style={{ display: 'flex', gap: '12px', float: 'right', alignItems: 'center' }}>
+          <button type="button" className="clear-button" onClick={() => navigate('/buddy')}>
+            AI Buddy
+          </button>
+          <button type="button" className="clear-button" onClick={() => navigate('/projects')}>
+            Projects
+          </button>
+          <button type="button" className="clear-button" onClick={() => navigate('/privacy')}>
+            Privacy
+          </button>
+          {['counsellor', 'admin'].includes(getRole()) && (
+            <button type="button" className="clear-button" onClick={() => navigate('/counsellor')}>
+              Counsellor Portal
+            </button>
+          )}
+          <button type="button" className="clear-button" onClick={handleLogout}>
+            Log out
+          </button>
+        </nav>
         <h1>Professional Skill Assessment</h1>
         <p className="subtitle">
           Discover your strengths and unlock your potential with our comprehensive skill evaluation

@@ -60,6 +60,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from routers import buddy, counsellor, privacy, projects
+app.include_router(buddy.router)
+app.include_router(counsellor.router)
+app.include_router(privacy.router)
+app.include_router(projects.router)
+
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 gemini_model = genai.GenerativeModel("gemini-2.5-pro")
 

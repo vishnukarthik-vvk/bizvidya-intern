@@ -28,7 +28,12 @@ function PrivacySettings({ gate = false }) {
         setConsents(d.consents || []);
         setNeedsConsent(d.needs_consent);
         setPending(
-          Object.fromEntries((d.consents || []).map((c) => [c.scope, c.granted]))
+          Object.fromEntries(
+            (d.consents || []).map((c) => [
+              c.scope,
+              c.required ? true : c.granted
+            ])
+          )
         );
       })
       .catch((e) => setError(e.detail || 'Could not load your privacy settings.'))
